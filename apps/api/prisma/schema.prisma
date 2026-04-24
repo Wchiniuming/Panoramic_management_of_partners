@@ -1,0 +1,569 @@
+generator client {
+  provider                   = "prisma-client-py"
+  enable_experimental_decimal = true
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== SYSTEM基础 (User Management) ==========
+
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  roles        UserRole[]
+  auditLogs    AuditLog[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id       Int       @id @default(autoincrement())
+  resource String    // e.g., "developer", "task", "assessment"
+  action   String    // e.g., "create", "read", "update", "delete", "approve"
+  roles    RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  action     String
+  resource   String
+  resourceId Int?     @map("resource_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  title     String
+  content   String
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ========== 合作伙伴 & 开发人员管理 ==========
+
+model Partner {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  contactName String?   @map("contact_name")
+  contactPhone String?  @map("contact_phone")
+  contactEmail String?  @map("contact_email")
+  status      PartnerStatus @default(ACTIVE)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  developers  Developer[]
+  tasks       Task[]
+  assessments AssessmentResult[]
+  improvementNeeds ImprovementNeed[]
+  improvementPlans ImprovementPlan[]
+  riskEntries  RiskEntry[]
+
+  @@map("partners")
+}
+
+enum PartnerStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Developer {
+  id           Int       @id @default(autoincrement())
+  partnerId    Int       @map("partner_id")
+  name         String
+  gender       String?
+  age          Int?
+  phone        String?
+  email        String?
+  idCard       String?   @map("id_card")
+  status       DeveloperStatus @default(PENDING)
+  workYears    Int?      @map("work_years")
+  resumeUrl    String?   @map("resume_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  partner      Partner   @relation(fields: [partnerId], references: [id])
+  skills       DeveloperSkill[]
+  evaluations  DeveloperEvaluation[]
+  taskAssignments TaskAssignment[]
+  workTrajectories WorkTrajectory[]
+  improvementPlans ImprovementPlan[]
+
+  @@index([partnerId])
+  @@index([status])
+  @@map("developers")
+}
+
+enum DeveloperStatus {
+  PENDING      // 待审核
+  APPROVED     // 审核通过
+  REJECTED     // 审核未通过
+  DISABLED     // 已禁用
+}
+
+model Skill {
+  id       Int       @id @default(autoincrement())
+  name     String
+  category String?   // e.g., "frontend", "backend", "testing"
+  level    Int       @default(1) // 1=一级, 2=二级
+  parentId Int?      @map("parent_id")
+
+  developers DeveloperSkill[]
+
+  @@map("skills")
+}
+
+model DeveloperSkill {
+  developerId Int
+  skillId    Int
+  proficiency Proficiency @default(BEGINNER)
+  certificateUrl String? @map("certificate_url")
+
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  skill       Skill     @relation(fields: [skillId], references: [id])
+
+  @@id([developerId, skillId])
+  @@map("developer_skills")
+}
+
+enum Proficiency {
+  BEGINNER   // 入门
+  INTERMEDIATE // 熟练
+  ADVANCED   // 精通
+}
+
+model DeveloperEvaluation {
+  id          Int      @id @default(autoincrement())
+  developerId Int      @map("developer_id")
+  evaluatorId Int      @map("evaluator_id")
+  taskId      Int?     @map("task_id")
+  score       Int      // 1-5
+  quality     Int?     // 任务完成质量 1-5
+  response    Int?     // 响应速度 1-5
+  teamwork    Int?     // 协作能力 1-5
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  developer   Developer @relation(fields: [developerId], references: [id])
+
+  @@index([developerId])
+  @@map("developer_evaluations")
+}
+
+model WorkTrajectory {
+  id          Int      @id @default(autoincrement())
+  developerId Int      @map("developer_id")
+  taskId      Int?     @map("task_id")
+  eventType   String   @map("event_type") // TASK_ASSIGNED, TASK_COMPLETED, AUDIT_FAILED, etc.
+  eventTime   DateTime @default(now()) @map("event_time")
+  description String?
+
+  developer   Developer @relation(fields: [developerId], references: [id])
+
+  @@index([developerId, eventTime])
+  @@map("work_trajectories")
+}
+
+// ========== 任务登记管理 ==========
+
+model Task {
+  id            Int        @id @default(autoincrement())
+  partnerId     Int        @map("partner_id")
+  name          String
+  description   String?
+  type          String     // e.g., "development", "testing", "design"
+  deliveryStandard String?  @map("delivery_standard")
+  startDate     DateTime?  @map("start_date")
+  endDate       DateTime?  @map("end_date")
+  priority      TaskPriority @default(MEDIUM)
+  budget        Decimal?   @db.Decimal(12, 2)
+  status        TaskStatus @default(DRAFT)
+  requirementDoc String?   @map("requirement_doc")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  partner       Partner    @relation(fields: [partnerId], references: [id])
+  assignments   TaskAssignment[]
+  progressRecords TaskProgress[]
+  deliverables  TaskDeliverable[]
+  delays        TaskDelay[]
+  assessmentResults AssessmentResult[]
+
+  @@index([partnerId])
+  @@index([status])
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  DRAFT       // 草稿
+  PENDING_AUDIT    // 待审批
+  ASSIGNED    // 已分配
+  IN_PROGRESS // 进行中
+  DELIVERED   // 已提交交付物
+  COMPLETED   // 已完成
+  REJECTED    // 已拒绝
+  ARCHIVED    // 已归档
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model TaskAssignment {
+  id        Int      @id @default(autoincrement())
+  taskId    Int      @map("task_id")
+  developerId Int?   @map("developer_id")
+  role      String   // "partner_admin", "developer"
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  task      Task     @relation(fields: [taskId], references: [id])
+  developer Developer? @relation(fields: [developerId], references: [id])
+
+  @@index([taskId])
+  @@map("task_assignments")
+}
+
+model TaskProgress {
+  id          Int      @id @default(autoincrement())
+  taskId      Int      @map("task_id")
+  status      TaskStatus
+  progress    Int?     // percentage 0-100
+  description String?
+  attachmentUrl String? @map("attachment_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  task        Task     @relation(fields: [taskId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("task_progress")
+}
+
+model TaskDeliverable {
+  id          Int      @id @default(autoincrement())
+  taskId      Int      @map("task_id")
+  name        String
+  description String?
+  fileUrl     String?  @map("file_url")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  task        Task     @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@map("task_deliverables")
+}
+
+model TaskDelay {
+  id          Int      @id @default(autoincrement())
+  taskId      Int      @map("task_id")
+  reason      String
+  newEndDate  DateTime @map("new_end_date")
+  status      DelayStatus @default(PENDING)
+  approverId  Int?     @map("approver_id")
+  approvedAt  DateTime? @map("approved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  task        Task     @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@map("task_delays")
+}
+
+enum DelayStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ========== 厂商支撑能力评估 ==========
+
+model AssessmentIndicator {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  parentId    Int?      @map("parent_id")
+  weight      Decimal   @db.Decimal(5, 2) // 权重 0-100
+  scoringType String    @map("scoring_type") // "quantitative" or "grade"
+  criteria    Json?     // 评分标准
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  children    AssessmentIndicator[] @relation("IndicatorHierarchy")
+  parent      AssessmentIndicator?  @relation("IndicatorHierarchy", fields: [parentId], references: [id])
+  results     AssessmentResult[]
+
+  @@map("assessment_indicators")
+}
+
+model AssessmentPlan {
+  id           Int       @id @default(autoincrement())
+  partnerId    Int       @map("partner_id")
+  name         String
+  periodType   String    @map("period_type") // "quarterly", "annual", "onetime"
+  startDate    DateTime  @map("start_date")
+  endDate      DateTime  @map("end_date")
+  evaluatorId  Int       @map("evaluator_id")
+  method       AssessmentMethod @default(MANUAL)
+  status       PlanStatus @default(DRAFT)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  indicatorIds Json      @map("indicator_ids") // [1,2,3] selected indicators
+
+  @@index([partnerId])
+  @@map("assessment_plans")
+}
+
+enum AssessmentMethod {
+  MANUAL
+  AUTO
+  HYBRID
+}
+
+enum PlanStatus {
+  DRAFT
+  PENDING_AUDIT
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+model AssessmentResult {
+  id          Int       @id @default(autoincrement())
+  planId      Int?      @map("plan_id")
+  indicatorId Int       @map("indicator_id")
+  taskId      Int?      @map("task_id")
+  partnerId   Int       @map("partner_id")
+  score       Decimal   @db.Decimal(5, 2)
+  assessorId  Int?      @map("assessor_id")
+  method      AssessmentMethod
+  comment     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  indicator   AssessmentIndicator @relation(fields: [indicatorId], references: [id])
+  task        Task?    @relation(fields: [taskId], references: [id])
+  partner     Partner  @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId, createdAt])
+  @@map("assessment_results")
+}
+
+model AssessmentReport {
+  id          Int       @id @default(autoincrement())
+  partnerId   Int       @map("partner_id")
+  planId      Int?      @map("plan_id")
+  totalScore  Decimal   @db.Decimal(5, 2) @map("total_score")
+  content     Json      // {scores: [], strengths: [], weaknesses: [], suggestions: []}
+  status      ReportStatus @default(DRAFT)
+  approverId  Int?      @map("approver_id")
+  approvedAt  DateTime? @map("approved_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  @@index([partnerId])
+  @@map("assessment_reports")
+}
+
+enum ReportStatus {
+  DRAFT
+  PENDING_AUDIT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ========== 正向改进管理 ==========
+
+model ImprovementNeed {
+  id          Int       @id @default(autoincrement())
+  partnerId   Int       @map("partner_id")
+  source      String    // "audit", "assessment", "manual"
+  sourceId    Int?      @map("source_id") // audit finding id or assessment id
+  title       String
+  description String?
+  target      String    // 改进目标
+  deadline    DateTime?
+  status      NeedStatus @default(OPEN)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  partner     Partner   @relation(fields: [partnerId], references: [id])
+  plans       ImprovementPlan[]
+
+  @@index([partnerId, status])
+  @@map("improvement_needs")
+}
+
+enum NeedStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model ImprovementPlan {
+  id            Int       @id @default(autoincrement())
+  needId        Int       @map("need_id")
+  partnerId     Int       @map("partner_id")
+  developerId   Int?      @map("developer_id")
+  title         String
+  measures      String    // 改进措施
+  startDate     DateTime? @map("start_date")
+  endDate       DateTime? @map("end_date")
+  status        PlanStatus @default(DRAFT)
+  approverId    Int?      @map("approver_id")
+  approvedAt    DateTime? @map("approved_at")
+  adjustmentNote String?  @map("adjustment_note")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  need          ImprovementNeed @relation(fields: [needId], references: [id])
+  partner       Partner         @relation(fields: [partnerId], references: [id])
+  developer     Developer?      @relation(fields: [developerId], references: [id])
+  progressRecords ImprovementProgress[]
+  deliverables  ImprovementDeliverable[]
+
+  @@index([needId])
+  @@map("improvement_plans")
+}
+
+model ImprovementProgress {
+  id        Int      @id @default(autoincrement())
+  planId    Int      @map("plan_id")
+  progress  Int      // percentage 0-100
+  description String?
+  attachmentUrl String? @map("attachment_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  plan      ImprovementPlan @relation(fields: [planId], references: [id])
+
+  @@index([planId, createdAt])
+  @@map("improvement_progress")
+}
+
+model ImprovementDeliverable {
+  id          Int      @id @default(autoincrement())
+  planId      Int      @map("plan_id")
+  name        String
+  description String?
+  fileUrl     String?  @map("file_url")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  plan        ImprovementPlan @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@map("improvement_deliverables")
+}
+
+// ========== 风险库管理 ==========
+
+model RiskType {
+  id       Int       @id @default(autoincrement())
+  name     String
+  category String?   // "personnel", "quality", "compliance", "security"
+  parentId Int?      @map("parent_id")
+  level    Int       @default(1) // 1=一级, 2=二级
+
+  entries  RiskEntry[]
+
+  @@map("risk_types")
+}
+
+model RiskEntry {
+  id            Int       @id @default(autoincrement())
+  typeId        Int       @map("type_id")
+  partnerId     Int?      @map("partner_id")
+  title         String
+  description   String?
+  level         RiskLevel @default(MEDIUM)
+  probability   String?   // "low", "medium", "high"
+  impact        String?   // "low", "medium", "high"
+  triggerCondition String? @map("trigger_condition")
+  mitigation    String?   // 处置措施
+  status        RiskStatus @default(OPEN)
+  attachmentUrl String?   @map("attachment_url")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  type          RiskType  @relation(fields: [typeId], references: [id])
+  partner       Partner?  @relation(fields: [partnerId], references: [id])
+
+  @@index([typeId])
+  @@index([partnerId])
+  @@index([level])
+  @@map("risk_entries")
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RiskStatus {
+  OPEN
+  MITIGATED
+  ACCEPTED
+  CLOSED
+}
