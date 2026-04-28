@@ -19,10 +19,10 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const token = localStorage.getItem('access_token')
   const location = useLocation()
 
-  if (!isAuthenticated) {
+  if (!token) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
@@ -49,7 +49,7 @@ const LoadingFallback: React.FC = () => (
   </div>
 )
 
-export const routes: RouteObject[] = [
+export const getRoutes = (): RouteObject[] => [
   {
     path: '/login',
     element: (
@@ -116,7 +116,9 @@ export const routes: RouteObject[] = [
           </React.Suspense>
         ),
       },
+      { path: '*', element: <NotFound /> },
     ],
   },
-  { path: '*', element: <NotFound /> },
 ]
+
+export const routes = getRoutes()

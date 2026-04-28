@@ -103,20 +103,20 @@ def _entry_to_response(entry) -> dict:
 
     return {
         'id': entry.id,
-        'type_id': entry.type_id,
+        'type_id': entry.typeId,
         'type_name': type_name,
-        'partner_id': getattr(entry, 'partner_id', None),
+        'partner_id': getattr(entry, 'partnerId', None),
         'partner_name': partner_name,
         'title': entry.title,
         'description': getattr(entry, 'description', None),
         'level': entry.level,
         'probability': getattr(entry, 'probability', None),
         'impact': getattr(entry, 'impact', None),
-        'trigger_condition': getattr(entry, 'trigger_condition', None),
+        'trigger_condition': getattr(entry, 'triggerCondition', None),
         'mitigation': getattr(entry, 'mitigation', None),
         'status': entry.status,
-        'created_at': entry.created_at.isoformat() if hasattr(entry, 'created_at') and entry.created_at else None,
-        'updated_at': entry.updated_at.isoformat() if hasattr(entry, 'updated_at') and entry.updated_at else None,
+        'created_at': entry.createdAt.isoformat() if hasattr(entry, 'createdAt') and entry.createdAt else None,
+        'updated_at': entry.updatedAt.isoformat() if hasattr(entry, 'updatedAt') and entry.updatedAt else None,
     }
 
 
@@ -129,7 +129,7 @@ async def list_risk_entries(
 ):
     where = {}
     if type_id:
-        where["type_id"] = type_id
+        where["typeId"] = type_id
     if level:
         where["level"] = level
     skip = (page - 1) * page_size if page and page_size else 0
@@ -149,7 +149,7 @@ async def list_risk_entries_root(
 ):
     where = {}
     if type_id:
-        where["type_id"] = type_id
+        where["typeId"] = type_id
     if level:
         where["level"] = level
     skip = (page - 1) * page_size if page and page_size else 0
@@ -162,8 +162,22 @@ async def list_risk_entries_root(
 
 @router.post("", response_model=RiskEntryResponse, status_code=201)
 async def create_risk_entry(entry: RiskEntryCreate):
-    created = await db.riskentry.create(data=entry.model_dump())
-    return _entry_to_response(created)
+    data = {
+        "typeId": entry.type_id,
+        "partnerId": entry.partner_id,
+        "title": entry.title,
+        "description": entry.description,
+        "level": entry.level,
+        "probability": entry.probability,
+        "impact": entry.impact,
+        "triggerCondition": entry.trigger_condition,
+        "mitigation": entry.mitigation,
+    }
+    created = await db.riskentry.create(data=data)
+    entry_with_rel = await db.riskentry.find_unique(
+        where={"id": created.id}, include={'type': True, 'partner': True}
+    )
+    return _entry_to_response(entry_with_rel)
 
 
 @router.get("/{entry_id}", response_model=RiskEntryResponse)
@@ -178,11 +192,28 @@ async def get_risk_entry(entry_id: int):
 
 @router.put("/{entry_id}", response_model=RiskEntryResponse)
 async def update_risk_entry(entry_id: int, update: dict):
+    mapped = {}
+    if 'type_id' in update:
+        mapped['typeId'] = update['type_id']
+    if 'partner_id' in update:
+        mapped['partnerId'] = update['partner_id']
+    if 'trigger_condition' in update:
+        mapped['triggerCondition'] = update['trigger_condition']
+    if 'created_at' in update:
+        mapped['createdAt'] = update['created_at']
+    if 'updated_at' in update:
+        mapped['updatedAt'] = update['updated_at']
+    for k, v in update.items():
+        if k not in ['type_id', 'partner_id', 'trigger_condition', 'created_at', 'updated_at']:
+            mapped[k] = v
     updated = await db.riskentry.update(
         where={"id": entry_id},
-        data=update
+        data=mapped
     )
-    return _entry_to_response(updated)
+    entry_with_rel = await db.riskentry.find_unique(
+        where={"id": entry_id}, include={'type': True, 'partner': True}
+    )
+    return _entry_to_response(entry_with_rel)
 
 
 @router.delete("/{entry_id}", status_code=204)

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>开发人员表单设计优化</title>
+  <style>
+    :root {
+      --primary: #1890ff;
+      --primary-hover: #40a9ff;
+      --primary-light: rgba(24, 144, 255, 0.08);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+      --radius: 8px;
+      --radius-lg: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    /* Variants Preview */
+    .preview-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .preview-header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+    .preview-header p {
+      color: var(--text-secondary);
+      font-size: 15px;
+    }
+
+    .variants-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .variant-card {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+
+    .variant-label {
+      background: var(--text-primary);
+      color: white;
+      padding: 12px 20px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .variant-preview {
+      padding: 20px;
+      background: #f1f5f9;
+      min-height: 500px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+
+    /* Overlay backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    /* ========== VARIANT A: Sectioned Single Column ========== */
+    .modal-A {
+      background: var(--card);
+      width: 520px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    .modal-A-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-A-header h2 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .modal-A-header .badge {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg);
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+    .modal-A-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .modal-A-close:hover {
+      background: var(--bg);
+      color: var(--text-primary);
+    }
+
+    .modal-A-body {
+      padding: 24px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .form-section {
+      margin-bottom: 24px;
+    }
+    .form-section:last-child { margin-bottom: 0; }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title::before {
+      content: '';
+      width: 3px;
+      height: 12px;
+      background: var(--primary);
+      border-radius: 2px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .form-row.single { grid-template-columns: 1fr; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .field label .required {
+      color: var(--error);
+      margin-left: 2px;
+    }
+
+    .field input,
+    .field select {
+      height: 40px;
+      padding: 0 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      color: var(--text-primary);
+      background: var(--card);
+      transition: all 0.2s;
+      outline: none;
+    }
+    .field input:focus,
+    .field select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    .field input::placeholder { color: var(--text-muted); }
+    .field select { cursor: pointer; }
+
+    .field .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .field .error {
+      font-size: 11px;
+      color: var(--error);
+    }
+
+    /* Skills chips */
+    .skills-container {
+      min-height: 42px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .skills-container:hover,
+    .skills-container:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    .skill-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .skill-chip button {
+      border: none;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      opacity: 0.7;
+    }
+    .skill-chip button:hover { opacity: 1; }
+    .skills-placeholder {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .modal-A-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: var(--bg);
+    }
+
+    .btn {
+      height: 38px;
+      padding: 0 20px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1.5px solid var(--border);
+    }
+    .btn-ghost:hover {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    /* ========== VARIANT B: Two Column with Avatar ========== */
+    .modal-B {
+      background: var(--card);
+      width: 680px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    .modal-B-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      padding: 24px;
+      color: white;
+    }
+    .modal-B-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-B-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-B-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      cursor: pointer;
+      color: rgba(255,255,255,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .modal-B-close:hover {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+
+    /* Avatar preview */
+    .profile-preview {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .profile-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary) 0%, #36c1fc 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+    }
+    .profile-info h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .profile-info p {
+      font-size: 13px;
+      opacity: 0.7;
+    }
+    .profile-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .modal-B-body {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group.span-2 { grid-column: span 2; }
+    .form-group label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .form-group label .required { color: var(--error); }
+    .form-group input,
+    .form-group select {
+      height: 42px;
+      padding: 0 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      color: var(--text-primary);
+      background: var(--card);
+      transition: all 0.2s;
+      outline: none;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+
+    .skills-grid {
+      grid-column: span 2;
+    }
+    .skills-grid label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: block;
+      margin-bottom: 8px;
+    }
+    .skills-grid label .required { color: var(--error); }
+    .skills-input-wrapper {
+      position: relative;
+    }
+    .skills-input-wrapper input {
+      width: 100%;
+      height: 44px;
+      padding: 0 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .skills-input-wrapper input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    .skills-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 4px;
+      box-shadow: var(--shadow-md);
+      z-index: 10;
+      display: none;
+    }
+    .skills-suggestions.show { display: block; }
+    .skills-suggestions li {
+      padding: 10px 14px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+    }
+    .skills-suggestions li:hover { background: var(--bg); }
+    .skills-suggestions li .cat {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .skills-suggestions li.selected { background: var(--primary-light); color: var(--primary); }
+
+    .modal-B-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: var(--bg);
+    }
+
+    /* ========== VARIANT C: Card-based Wizard ========== */
+    .modal-C {
+      background: var(--card);
+      width: 600px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    .modal-C-header {
+      padding: 24px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-C-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+    }
+
+    /* Progress steps */
+    .steps {
+      display: flex;
+      gap: 0;
+    }
+    .step {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+    }
+    .step::after {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin: 0 12px;
+    }
+    .step:last-child::after { display: none; }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.3s;
+    }
+    .step.active .step-num {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: white;
+    }
+    .step.done .step-num {
+      border-color: var(--success);
+      background: var(--success);
+      color: white;
+    }
+    .step-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .step.active .step-label { color: var(--primary); }
+    .step.done .step-label { color: var(--success); }
+
+    .modal-C-body {
+      padding: 28px 24px;
+    }
+
+    /* Step content card */
+    .step-card {
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .step-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+    }
+
+    .info-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .info-card {
+      background: var(--bg);
+      border-radius: var(--radius);
+      padding: 12px;
+      text-align: center;
+    }
+    .info-card .value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .info-card .label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    /* Tag pills */
+    .tag-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tag-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1.5px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .tag-pill:hover { border-color: var(--primary); color: var(--primary); }
+    .tag-pill.selected {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+    .tag-pill .remove {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+
+    .modal-C-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-C-footer .left,
+    .modal-C-footer .right {
+      display: flex;
+      gap: 12px;
+    }
+
+    /* Preview panel */
+    .preview-panel {
+      margin-top: 20px;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--primary-light) 0%, rgba(24,144,255,0.03) 100%);
+      border-radius: var(--radius);
+      border: 1px solid rgba(24,144,255,0.15);
+    }
+    .preview-panel h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .preview-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .preview-item {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .preview-item strong {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* Tweaks Panel */
+    .tweaks {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      padding: 16px;
+      width: 280px;
+      font-size: 13px;
+    }
+    .tweaks h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .tweak-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .tweak-item:last-child { margin-bottom: 0; }
+    .tweak-item label { color: var(--text-secondary); }
+    .tweak-item select {
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* Color swatches for skills */
+    .skill-category-frontend { background: rgba(24,144,255,0.1); color: #1890ff; }
+    .skill-category-backend { background: rgba(34,197,94,0.1); color: #22c55e; }
+    .skill-category-database { background: rgba(168,85,247,0.1); color: #a855f7; }
+    .skill-category-devops { background: rgba(245,158,11,0.1); color: #f59e0b; }
+  </style>
+</head>
+<body>
+
+<div class="preview-header">
+  <h1>开发人员表单设计优化</h1>
+  <p>三种布局方案对比 — 点击各Variant标签页查看</p>
+</div>
+
+<div class="variants-grid">
+
+  <!-- VARIANT A: Sectioned Single Column -->
+  <div class="variant-card">
+    <div class="variant-label">Variant A: 分组单列</div>
+    <div class="variant-preview">
+      <div class="modal-backdrop" style="position:relative;background:transparent;align-items:flex-start;padding-top:20px;">
+        <div class="modal-A">
+          <div class="modal-A-header">
+            <h2>新建开发人员</h2>
+            <span class="badge">V1.0</span>
+            <button class="modal-A-close">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="modal-A-body">
+            <div class="form-section">
+              <div class="section-title">基本信息</div>
+              <div class="form-row">
+                <div class="field">
+                  <label>姓名 <span class="required">*</span></label>
+                  <input type="text" placeholder="请输入姓名" value="张明">
+                </div>
+                <div class="field">
+                  <label>工作年限</label>
+                  <input type="text" placeholder="请输入工作年限" value="5年">
+                </div>
+              </div>
+              <div class="form-row single" style="margin-top:14px;">
+                <div class="field">
+                  <label>手机号码 <span class="required">*</span></label>
+                  <input type="tel" placeholder="请输入手机号" value="138****8001">
+                </div>
+              </div>
+              <div class="form-row single" style="margin-top:14px;">
+                <div class="field">
+                  <label>邮箱 <span class="required">*</span></label>
+                  <input type="email" placeholder="请输入邮箱" value="zhangming@example.com">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="section-title">所属信息</div>
+              <div class="form-row single">
+                <div class="field">
+                  <label>合作伙伴 <span class="required">*</span></label>
+                  <select>
+                    <option selected>华为技术有限公司</option>
+                    <option>中兴通讯股份有限公司</option>
+                    <option>烽火通信科技股份有限公司</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="section-title">技能标签</div>
+              <div class="skills-container" tabindex="0">
+                <span class="skill-chip">React <button>x</button></span>
+                <span class="skill-chip">TypeScript <button>x</button></span>
+                <span class="skill-chip">Node.js <button>x</button></span>
+                <span class="skills-placeholder">选择或搜索技能...</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-A-footer">
+            <button class="btn btn-ghost">取消</button>
+            <button class="btn btn-primary">创建</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT B: Two Column with Avatar -->
+  <div class="variant-card">
+    <div class="variant-label">Variant B: 双列+头像预览</div>
+    <div class="variant-preview">
+      <div class="modal-backdrop" style="position:relative;background:transparent;align-items:flex-start;padding-top:20px;">
+        <div class="modal-B">
+          <div class="modal-B-header">
+            <div class="modal-B-header-top">
+              <h2>新建开发人员</h2>
+              <button class="modal-B-close">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="profile-preview">
+              <div class="profile-avatar">张</div>
+              <div class="profile-info">
+                <h3>张明</h3>
+                <p>138****8001</p>
+                <span class="profile-badge">待审核</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-B-body">
+            <div class="form-group">
+              <label>姓名 <span class="required">*</span></label>
+              <input type="text" value="张明">
+            </div>
+            <div class="form-group">
+              <label>工作年限</label>
+              <input type="text" value="5年">
+            </div>
+            <div class="form-group">
+              <label>手机号码 <span class="required">*</span></label>
+              <input type="tel" value="138****8001">
+            </div>
+            <div class="form-group">
+              <label>邮箱 <span class="required">*</span></label>
+              <input type="email" value="zhangming@example.com">
+            </div>
+            <div class="form-group span-2">
+              <label>合作伙伴 <span class="required">*</span></label>
+              <select>
+                <option selected>华为技术有限公司</option>
+                <option>中兴通讯股份有限公司</option>
+                <option>烽火通信科技股份有限公司</option>
+              </select>
+            </div>
+            <div class="skills-grid">
+              <label>技能标签</label>
+              <div class="skills-input-wrapper">
+                <input type="text" placeholder="搜索或添加技能..." value="React, TypeScript, Node.js">
+              </div>
+              <div class="tag-pills" style="margin-top:12px;">
+                <span class="tag-pill selected skill-category-frontend">React</span>
+                <span class="tag-pill selected skill-category-frontend">TypeScript</span>
+                <span class="tag-pill selected skill-category-backend">Node.js</span>
+                <span class="tag-pill skill-category-database">MySQL</span>
+                <span class="tag-pill skill-category-devops">Docker</span>
+                <span class="tag-pill skill-category-frontend">Vue</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-B-footer">
+            <button class="btn btn-ghost">取消</button>
+            <button class="btn btn-primary">创建</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT C: Card Wizard -->
+  <div class="variant-card">
+    <div class="variant-label">Variant C: 分步向导+卡片</div>
+    <div class="variant-preview">
+      <div class="modal-backdrop" style="position:relative;background:transparent;align-items:flex-start;padding-top:20px;">
+        <div class="modal-C">
+          <div class="modal-C-header">
+            <h2>新建开发人员</h2>
+            <div class="steps">
+              <div class="step active">
+                <div class="step-num">1</div>
+                <span class="step-label">基本信息</span>
+              </div>
+              <div class="step">
+                <div class="step-num">2</div>
+                <span class="step-label">技能标签</span>
+              </div>
+              <div class="step">
+                <div class="step-num">3</div>
+                <span class="step-label">确认</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-C-body">
+            <div class="step-card">
+              <h3>填写基本信息</h3>
+              <div class="info-cards">
+                <div class="info-card">
+                  <div class="value">5</div>
+                  <div class="label">工作年限</div>
+                </div>
+                <div class="info-card">
+                  <div class="value">3</div>
+                  <div class="label">技能数</div>
+                </div>
+                <div class="info-card">
+                  <div class="value" style="color:var(--primary);">华为</div>
+                  <div class="label">合作伙伴</div>
+                </div>
+              </div>
+              <div class="form-row" style="gap:14px;">
+                <div class="field" style="flex:1;">
+                  <label>姓名 <span class="required">*</span></label>
+                  <input type="text" value="张明" style="height:44px;border:1.5px solid var(--border);border-radius:8px;padding:0 14px;font-size:14px;outline:none;">
+                </div>
+                <div class="field" style="flex:1;">
+                  <label>工作年限</label>
+                  <input type="text" value="5年" style="height:44px;border:1.5px solid var(--border);border-radius:8px;padding:0 14px;font-size:14px;outline:none;">
+                </div>
+              </div>
+              <div class="form-row" style="gap:14px;margin-top:14px;">
+                <div class="field" style="flex:1;">
+                  <label>手机号码 <span class="required">*</span></label>
+                  <input type="tel" value="138****8001" style="height:44px;border:1.5px solid var(--border);border-radius:8px;padding:0 14px;font-size:14px;outline:none;">
+                </div>
+                <div class="field" style="flex:1;">
+                  <label>邮箱 <span class="required">*</span></label>
+                  <input type="email" value="zhangming@example.com" style="height:44px;border:1.5px solid var(--border);border-radius:8px;padding:0 14px;font-size:14px;outline:none;">
+                </div>
+              </div>
+              <div class="field" style="margin-top:14px;">
+                <label>合作伙伴 <span class="required">*</span></label>
+                <select style="height:44px;border:1.5px solid var(--border);border-radius:8px;padding:0 14px;font-size:14px;width:100%;outline:none;">
+                  <option selected>华为技术有限公司</option>
+                </select>
+              </div>
+
+              <div class="preview-panel">
+                <h4>实时预览</h4>
+                <div class="preview-row">
+                  <div class="preview-item"><strong>姓名:</strong> 张明</div>
+                  <div class="preview-item"><strong>手机:</strong> 138****8001</div>
+                  <div class="preview-item"><strong>邮箱:</strong> zhangming@example.com</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-C-footer">
+            <div class="left"></div>
+            <div class="right">
+              <button class="btn btn-ghost">上一步</button>
+              <button class="btn btn-primary">下一步</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Design Decisions -->
+<div style="max-width:1200px;margin:60px auto 0;text-align:center;">
+  <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:20px;">Design Decisions</h3>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;text-align:left;">
+    <div style="background:var(--card);padding:20px;border-radius:8px;box-shadow:var(--shadow-sm);">
+      <h4 style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Variant A — 分组单列</h4>
+      <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;">保留原有垂直布局，通过section分组提升层次感。改动最小，适合快速实施。</p>
+    </div>
+    <div style="background:var(--card);padding:20px;border-radius:8px;box-shadow:var(--shadow-sm);">
+      <h4 style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Variant B — 双列+头像</h4>
+      <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;">双列布局节省垂直空间，头像实时预览增强代入感。技能用彩色标签区分分类。</p>
+    </div>
+    <div style="background:var(--card);padding:20px;border-radius:8px;box-shadow:var(--shadow-sm);">
+      <h4 style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Variant C — 分步向导</h4>
+      <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;">分步填写降低认知负荷，实时预览卡片增强确认感。适合长表单场景。</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

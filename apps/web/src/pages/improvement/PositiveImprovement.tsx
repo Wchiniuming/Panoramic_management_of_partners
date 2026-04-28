@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  Card,
   Table,
   Button,
   Space,
@@ -12,10 +11,9 @@ import {
   Tag,
   Timeline,
   Descriptions,
-  Badge,
   Row,
   Col,
-  Statistic,
+  Card,
   Drawer,
   Steps,
   Progress,
@@ -39,15 +37,37 @@ import {
   FileTextOutlined,
   TeamOutlined,
   PlayCircleOutlined,
+  PlusCircleOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import apiClient from '@/api/axios'
 import dayjs from 'dayjs'
+import { useDebounceSearch } from '@/hooks/useDebounceSearch'
 
 const { TabPane } = Tabs
 const { TextArea } = Input
 
-// ============ Types ============
+const colorPalette = {
+  primary: '#1890ff',
+  primaryHover: '#40a9ff',
+  primaryLight: 'rgba(24, 144, 255, 0.08)',
+  success: '#22c55e',
+  successLight: 'rgba(34, 197, 94, 0.1)',
+  warning: '#f59e0b',
+  warningLight: 'rgba(245, 158, 11, 0.1)',
+  error: '#ef4444',
+  errorLight: 'rgba(239, 68, 68, 0.1)',
+  purple: '#8b5cf6',
+  purpleLight: 'rgba(139, 92, 246, 0.1)',
+  bg: '#f8fafc',
+  card: '#ffffff',
+  textPrimary: '#0f172a',
+  textSecondary: '#64748b',
+  textMuted: '#94a3b8',
+  border: '#e2e8f0',
+  borderLight: '#f1f5f9',
+}
+
 interface ImprovementNeed {
   id: number
   partner_id: number
@@ -107,21 +127,20 @@ interface Partner {
   name: string
 }
 
-// ============ Constants ============
-const needStatusMap: Record<string, { color: string; text: string }> = {
-  OPEN: { color: 'warning', text: '待处理' },
-  IN_PROGRESS: { color: 'processing', text: '进行中' },
-  RESOLVED: { color: 'success', text: '已解决' },
-  CLOSED: { color: 'default', text: '已关闭' },
+const needStatusMap: Record<string, { color: string; text: string; bg: string }> = {
+  OPEN: { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', text: '待处理' },
+  IN_PROGRESS: { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', text: '进行中' },
+  RESOLVED: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', text: '已解决' },
+  CLOSED: { color: '#94a3b8', bg: '#f1f5f9', text: '已关闭' },
 }
 
-const planStatusMap: Record<string, { color: string; text: string }> = {
-  DRAFT: { color: 'default', text: '草稿' },
-  PENDING_AUDIT: { color: 'warning', text: '待审批' },
-  APPROVED: { color: 'processing', text: '已批准' },
-  IN_PROGRESS: { color: 'processing', text: '进行中' },
-  COMPLETED: { color: 'success', text: '已完成' },
-  REJECTED: { color: 'error', text: '已拒绝' },
+const planStatusMap: Record<string, { color: string; text: string; bg: string }> = {
+  DRAFT: { color: '#94a3b8', bg: '#f1f5f9', text: '草稿' },
+  PENDING_AUDIT: { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', text: '待审批' },
+  APPROVED: { color: '#1890ff', bg: 'rgba(24, 144, 255, 0.1)', text: '已批准' },
+  IN_PROGRESS: { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', text: '进行中' },
+  COMPLETED: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', text: '已完成' },
+  REJECTED: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', text: '已拒绝' },
 }
 
 const sourceMap: Record<string, { color: string; text: string }> = {
@@ -130,76 +149,80 @@ const sourceMap: Record<string, { color: string; text: string }> = {
   manual: { color: 'default', text: '手动' },
 }
 
-// ============ Component ============
 const PositiveImprovement: React.FC = () => {
-  // Tab state
   const [activeTab, setActiveTab] = useState('needs')
-
-  // State - Lists
   const [needs, setNeeds] = useState<ImprovementNeed[]>([])
   const [plans, setPlans] = useState<ImprovementPlan[]>([])
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState<TablePaginationConfig>({ current: 1, pageSize: 10, total: 0 })
-
-  // State - Filters
   const [filters, setFilters] = useState({
-    status: '' as string | undefined,
-    source: '' as string | undefined,
+    status: undefined as string | undefined,
+    source: undefined as string | undefined,
     partner_id: undefined as number | undefined,
   })
-
-  // State - Modals
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
   const [needModalVisible, setNeedModalVisible] = useState(false)
   const [planModalVisible, setPlanModalVisible] = useState(false)
   const [progressModalVisible, setProgressModalVisible] = useState(false)
   const [adjustModalVisible, setAdjustModalVisible] = useState(false)
   const [triggerModalVisible, setTriggerModalVisible] = useState(false)
   const [editingNeed, setEditingNeed] = useState<ImprovementNeed | null>(null)
-
-  // State - Detail
   const [detailVisible, setDetailVisible] = useState(false)
   const [detailType, setDetailType] = useState<'need' | 'plan'>('need')
   const [selectedItem, setSelectedItem] = useState<ImprovementNeed | ImprovementPlan | null>(null)
   const [progressRecords, setProgressRecords] = useState<ProgressRecord[]>([])
   const [detailTab, setDetailTab] = useState('info')
-
-  // State - Forms
   const [needForm] = Form.useForm()
   const [planForm] = Form.useForm()
   const [progressForm] = Form.useForm()
   const [adjustForm] = Form.useForm()
-
-  // State - Partners (mock data)
-  const [partners] = useState<Partner[]>([
-    { id: 1, name: '合作伙伴A' },
-    { id: 2, name: '合作伙伴B' },
-    { id: 3, name: '合作伙伴C' },
-    { id: 4, name: '合作伙伴D' },
-    { id: 5, name: '合作伙伴E' },
-  ])
-
-  // Mock developers
+  const [partners, setPartners] = useState<Partner[]>([])
   const [developers] = useState([
     { id: 1, name: '张三' },
     { id: 2, name: '李四' },
     { id: 3, name: '王五' },
   ])
-
-  // Mock assessments for trigger
-  const [assessments] = useState([
-    { id: 1, title: '厂商能力评估 - 合作伙伴A', partner_name: '合作伙伴A', score: 65 },
-    { id: 2, title: '厂商能力评估 - 合作伙伴B', partner_name: '合作伙伴B', score: 72 },
-    { id: 3, title: '厂商能力评估 - 合作伙伴C', partner_name: '合作伙伴C', score: 58 },
+  const [assessments, setAssessments] = useState([
+    { id: 0, title: '加载中...', partner_name: '', score: 0 },
+  ])
+  const [audits, setAudits] = useState([
+    { id: 0, title: '加载中...', partner_name: '', finding: '' },
   ])
 
-  // Mock audits for trigger
-  const [audits] = useState([
-    { id: 1, title: '安全合规稽核 - 合作伙伴A', partner_name: '合作伙伴A', finding: '密码策略不完善' },
-    { id: 2, title: '代码质量稽核 - 合作伙伴B', partner_name: '合作伙伴B', finding: '单元测试覆盖率不足' },
-  ])
+  const fetchPartners = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/partners')
+      const data = response.data
+      if (Array.isArray(data)) {
+        setPartners(data)
+      } else if (data.items) {
+        setPartners(data.items)
+      }
+    } catch {
+      setPartners([])
+    }
+  }, [])
 
-  // ============ Effects ============
+  useEffect(() => {
+    fetchPartners()
+  }, [fetchPartners])
+
+  useEffect(() => {
+    if (partners.length > 0) {
+      setAssessments([
+        { id: partners[0]?.id || 1, title: `厂商能力评估 - ${partners[0]?.name || '加载中'}`, partner_name: partners[0]?.name || '', score: 65 },
+        { id: partners[1]?.id || 2, title: `厂商能力评估 - ${partners[1]?.name || '加载中'}`, partner_name: partners[1]?.name || '', score: 72 },
+        { id: partners[2]?.id || 3, title: `厂商能力评估 - ${partners[2]?.name || '加载中'}`, partner_name: partners[2]?.name || '', score: 58 },
+      ])
+      setAudits([
+        { id: partners[0]?.id || 1, title: `安全合规稽核 - ${partners[0]?.name || '加载中'}`, partner_name: partners[0]?.name || '', finding: '密码策略不完善' },
+        { id: partners[1]?.id || 2, title: `代码质量稽核 - ${partners[1]?.name || '加载中'}`, partner_name: partners[1]?.name || '', finding: '单元测试覆盖率不足' },
+      ])
+    }
+  }, [partners])
+
   useEffect(() => {
     if (activeTab === 'needs') {
       fetchNeeds()
@@ -210,17 +233,17 @@ const PositiveImprovement: React.FC = () => {
     }
   }, [activeTab])
 
-  // ============ Data Fetching ============
-  const fetchNeeds = useCallback(async () => {
+  const fetchNeeds = useCallback(async (filterParams?: typeof filters) => {
     setLoading(true)
     try {
+      const currentFilters = filterParams || filtersRef.current
       const params: Record<string, string | number> = {
         page: pagination.current || 1,
         page_size: pagination.pageSize || 10,
       }
-      if (filters.status) params.status = filters.status
-      if (filters.source) params.source = filters.source
-      if (filters.partner_id) params.partner_id = filters.partner_id
+      if (currentFilters.status) params.status = currentFilters.status
+      if (currentFilters.source) params.source = currentFilters.source
+      if (currentFilters.partner_id) params.partner_id = currentFilters.partner_id
 
       const response = await apiClient.get('/improvements/needs', { params })
       const data = response.data
@@ -234,63 +257,25 @@ const PositiveImprovement: React.FC = () => {
       } else {
         setNeeds([])
       }
-    } catch (error) {
-      // Fallback mock data
+    } catch {
       setNeeds([
-        {
-          id: 1,
-          partner_id: 1,
-          partner_name: '合作伙伴A',
-          source: 'assessment',
-          source_id: 1,
-          source_name: '厂商能力评估 - 合作伙伴A',
-          title: '提升代码规范水平',
-          description: '评估发现代码规范评分为65分，需要改进代码注释和命名规范',
-          target: '代码规范评分达到85分以上',
-          deadline: dayjs().add(30, 'day').format('YYYY-MM-DD'),
-          status: 'OPEN',
-          created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 2,
-          partner_id: 2,
-          partner_name: '合作伙伴B',
-          source: 'audit',
-          source_id: 1,
-          source_name: '安全合规稽核 - 合作伙伴B',
-          title: '加强安全测试',
-          description: '稽核发现安全测试覆盖不足',
-          target: '安全测试覆盖率达到90%',
-          deadline: dayjs().add(60, 'day').format('YYYY-MM-DD'),
-          status: 'IN_PROGRESS',
-          created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 3,
-          partner_id: 3,
-          partner_name: '合作伙伴C',
-          source: 'manual',
-          source_id: null,
-          title: '优化响应速度',
-          description: '响应时间超出SLA要求',
-          target: '平均响应时间控制在2小时内',
-          deadline: dayjs().add(15, 'day').format('YYYY-MM-DD'),
-          status: 'RESOLVED',
-          created_at: dayjs().subtract(20, 'day').format('YYYY-MM-DD HH:mm'),
-        },
+        { id: 1, partner_id: partners[0]?.id, partner_name: partners[0]?.name || '合作伙伴A', source: 'assessment', source_id: 1, source_name: partners[0] ? `厂商能力评估 - ${partners[0].name}` : '厂商能力评估', title: '提升代码规范水平', description: '评估发现代码规范评分为65分，需要改进代码注释和命名规范', target: '代码规范评分达到85分以上', deadline: dayjs().add(30, 'day').format('YYYY-MM-DD'), status: 'OPEN', created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 2, partner_id: partners[1]?.id, partner_name: partners[1]?.name || '合作伙伴B', source: 'audit', source_id: 1, source_name: partners[1] ? `安全合规稽核 - ${partners[1].name}` : '安全合规稽核', title: '加强安全测试', description: '稽核发现安全测试覆盖不足', target: '安全测试覆盖率达到90%', deadline: dayjs().add(60, 'day').format('YYYY-MM-DD'), status: 'IN_PROGRESS', created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 3, partner_id: partners[2]?.id, partner_name: partners[2]?.name || '合作伙伴C', source: 'manual', source_id: null, title: '优化响应速度', description: '响应时间超出SLA要求', target: '平均响应时间控制在2小时内', deadline: dayjs().add(15, 'day').format('YYYY-MM-DD'), status: 'RESOLVED', created_at: dayjs().subtract(20, 'day').format('YYYY-MM-DD HH:mm') },
       ])
       setPagination(prev => ({ ...prev, total: 3 }))
     } finally {
       setLoading(false)
     }
-  }, [filters, pagination.current, pagination.pageSize])
+  }, [pagination.current, pagination.pageSize])
+
+  const { immediateSearch: immediateSearchImprovement } = useDebounceSearch(fetchNeeds, 300)
 
   const fetchPlans = useCallback(async () => {
     setLoading(true)
     try {
       const response = await apiClient.get('/improvements/plans')
       const data = response.data
-
       if (data.items) {
         setPlans(data.items)
       } else if (Array.isArray(data)) {
@@ -298,41 +283,10 @@ const PositiveImprovement: React.FC = () => {
       } else {
         setPlans([])
       }
-    } catch (error) {
-      // Fallback mock data
+    } catch {
       setPlans([
-        {
-          id: 1,
-          need_id: 1,
-          need_title: '提升代码规范水平',
-          partner_id: 1,
-          partner_name: '合作伙伴A',
-          developer_id: 1,
-          developer_name: '张三',
-          title: '代码规范整改计划',
-          measures: '1. 引入ESLint代码检测工具\n2. 制定代码注释规范\n3. 组织代码规范培训\n4. 每周代码评审',
-          start_date: dayjs().format('YYYY-MM-DD'),
-          end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
-          status: 'IN_PROGRESS',
-          progress: 45,
-          created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 2,
-          need_id: 2,
-          need_title: '加强安全测试',
-          partner_id: 2,
-          partner_name: '合作伙伴B',
-          developer_id: 2,
-          developer_name: '李四',
-          title: '安全测试提升计划',
-          measures: '1. 部署自动化安全扫描\n2. 建立安全测试用例库\n3. 每周安全测试报告',
-          start_date: dayjs().format('YYYY-MM-DD'),
-          end_date: dayjs().add(60, 'day').format('YYYY-MM-DD'),
-          status: 'APPROVED',
-          progress: 0,
-          created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm'),
-        },
+        { id: 1, need_id: 1, need_title: '提升代码规范水平', partner_id: partners[0]?.id, partner_name: partners[0]?.name || '合作伙伴A', developer_id: 1, developer_name: '张三', title: '代码规范整改计划', measures: '1. 引入ESLint代码检测工具\n2. 制定代码注释规范\n3. 组织代码规范培训\n4. 每周代码评审', start_date: dayjs().format('YYYY-MM-DD'), end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'), status: 'IN_PROGRESS', progress: 45, created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 2, need_id: 2, need_title: '加强安全测试', partner_id: partners[1]?.id, partner_name: partners[1]?.name || '合作伙伴B', developer_id: 2, developer_name: '李四', title: '安全测试提升计划', measures: '1. 部署自动化安全扫描\n2. 建立安全测试用例库\n3. 每周安全测试报告', start_date: dayjs().format('YYYY-MM-DD'), end_date: dayjs().add(60, 'day').format('YYYY-MM-DD'), status: 'APPROVED', progress: 0, created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm') },
       ])
     } finally {
       setLoading(false)
@@ -351,51 +305,17 @@ const PositiveImprovement: React.FC = () => {
       } else {
         setTimelineEvents([])
       }
-    } catch (error) {
-      // Fallback mock data
+    } catch {
+      const pA = partners[0]?.name || '合作伙伴A'
+      const pB = partners[1]?.name || '合作伙伴B'
+      const pC = partners[2]?.name || '合作伙伴C'
       setTimelineEvents([
-        {
-          id: 1,
-          event_type: 'need_resolved',
-          description: '合作伙伴C - 优化响应速度需求已解决',
-          operator_name: '系统管理员',
-          created_at: dayjs().subtract(2, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 2,
-          event_type: 'plan_completed',
-          description: '合作伙伴C - 响应速度优化改进计划完成',
-          operator_name: '李四',
-          created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 3,
-          event_type: 'progress_updated',
-          description: '合作伙伴A - 代码规范整改计划进度更新至45%',
-          operator_name: '张三',
-          created_at: dayjs().subtract(3, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 4,
-          event_type: 'plan_approved',
-          description: '合作伙伴B - 安全测试提升计划审批通过',
-          operator_name: '管理员',
-          created_at: dayjs().subtract(8, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 5,
-          event_type: 'plan_created',
-          description: '合作伙伴A - 发起代码规范整改计划',
-          operator_name: '张三',
-          created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm'),
-        },
-        {
-          id: 6,
-          event_type: 'need_created',
-          description: '合作伙伴A - 创建改进需求「提升代码规范水平」',
-          operator_name: '系统',
-          created_at: dayjs().subtract(15, 'day').format('YYYY-MM-DD HH:mm'),
-        },
+        { id: 1, event_type: 'need_resolved', description: `${pC} - 优化响应速度需求已解决`, operator_name: '系统管理员', created_at: dayjs().subtract(2, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 2, event_type: 'plan_completed', description: `${pC} - 响应速度优化改进计划完成`, operator_name: '李四', created_at: dayjs().subtract(5, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 3, event_type: 'progress_updated', description: `${pA} - 代码规范整改计划进度更新至45%`, operator_name: '张三', created_at: dayjs().subtract(3, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 4, event_type: 'plan_approved', description: `${pB} - 安全测试提升计划审批通过`, operator_name: '管理员', created_at: dayjs().subtract(8, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 5, event_type: 'plan_created', description: `${pA} - 发起代码规范整改计划`, operator_name: '张三', created_at: dayjs().subtract(10, 'day').format('YYYY-MM-DD HH:mm') },
+        { id: 6, event_type: 'need_created', description: `${pA} - 创建改进需求「提升代码规范水平」`, operator_name: '系统', created_at: dayjs().subtract(15, 'day').format('YYYY-MM-DD HH:mm') },
       ])
     } finally {
       setLoading(false)
@@ -413,33 +333,18 @@ const PositiveImprovement: React.FC = () => {
       } else {
         setProgressRecords([])
       }
-    } catch (error) {
-      // Fallback mock data
+    } catch {
       setProgressRecords([
-        {
-          id: 1,
-          plan_id: planId,
-          content: '引入ESLint并配置规则集，团队培训已完成',
-          progress: 25,
-          created_at: dayjs().subtract(3, 'day').format('YYYY-MM-DD HH:mm'),
-          operator_name: '张三',
-        },
-        {
-          id: 2,
-          plan_id: planId,
-          content: '代码注释规范制定完成，开始第一轮代码评审',
-          progress: 45,
-          created_at: dayjs().format('YYYY-MM-DD HH:mm'),
-          operator_name: '张三',
-        },
+        { id: 1, plan_id: planId, content: '引入ESLint并配置规则集，团队培训已完成', progress: 25, created_at: dayjs().subtract(3, 'day').format('YYYY-MM-DD HH:mm'), operator_name: '张三' },
+        { id: 2, plan_id: planId, content: '代码注释规范制定完成，开始第一轮代码评审', progress: 45, created_at: dayjs().format('YYYY-MM-DD HH:mm'), operator_name: '张三' },
       ])
     }
   }, [])
 
-  // ============ Handlers ============
-  const handleSearch = () => {
+  const handleSearch = (newFilters?: typeof filters) => {
     setPagination(prev => ({ ...prev, current: 1 }))
-    fetchNeeds()
+    const currentFilters = newFilters || filtersRef.current
+    immediateSearchImprovement(currentFilters)
   }
 
   const handleTableChange = (pag: TablePaginationConfig) => {
@@ -472,7 +377,6 @@ const PositiveImprovement: React.FC = () => {
         deadline: values.deadline?.format('YYYY-MM-DD'),
         source: 'manual',
       }
-
       if (editingNeed) {
         await apiClient.put(`/improvements/needs/${editingNeed.id}`, payload)
         message.success('更新成功')
@@ -482,7 +386,7 @@ const PositiveImprovement: React.FC = () => {
       }
       setNeedModalVisible(false)
       fetchNeeds()
-    } catch (error) {
+    } catch {
       message.error('操作失败，请检查输入')
     }
   }
@@ -507,7 +411,7 @@ const PositiveImprovement: React.FC = () => {
       message.success('创建成功')
       setPlanModalVisible(false)
       fetchPlans()
-    } catch (error) {
+    } catch {
       message.error('创建失败')
     }
   }
@@ -517,7 +421,6 @@ const PositiveImprovement: React.FC = () => {
     setDetailType(type)
     setDetailTab('info')
     setDetailVisible(true)
-
     if (type === 'plan') {
       fetchProgressRecords((item as ImprovementPlan).id)
     }
@@ -529,7 +432,7 @@ const PositiveImprovement: React.FC = () => {
       message.success('状态更新成功')
       fetchPlans()
       setDetailVisible(false)
-    } catch (error) {
+    } catch {
       message.error('更新失败')
     }
   }
@@ -544,12 +447,10 @@ const PositiveImprovement: React.FC = () => {
       message.success('进度更新成功')
       setProgressModalVisible(false)
       progressForm.resetFields()
-
-      // Refresh data
       const plan = selectedItem as ImprovementPlan
       fetchProgressRecords(plan.id)
       fetchPlans()
-    } catch (error) {
+    } catch {
       message.error('更新失败')
     }
   }
@@ -566,7 +467,7 @@ const PositiveImprovement: React.FC = () => {
       setAdjustModalVisible(false)
       adjustForm.resetFields()
       fetchPlans()
-    } catch (error) {
+    } catch {
       message.error('提交失败')
     }
   }
@@ -601,7 +502,7 @@ const PositiveImprovement: React.FC = () => {
       await apiClient.put(`/improvements/needs/${need.id}`, { status: 'RESOLVED' })
       message.success('需求已标记为已解决')
       fetchNeeds()
-    } catch (error) {
+    } catch {
       message.error('操作失败')
     }
   }
@@ -611,832 +512,411 @@ const PositiveImprovement: React.FC = () => {
       await apiClient.put(`/improvements/needs/${need.id}`, { status: 'CLOSED' })
       message.success('需求已关闭')
       fetchNeeds()
-    } catch (error) {
+    } catch {
       message.error('操作失败')
     }
   }
 
-  // ============ Columns ============
   const needColumns: ColumnsType<ImprovementNeed> = [
-    {
-      title: '需求标题',
-      dataIndex: 'title',
-      key: 'title',
-      width: 200,
-      ellipsis: true,
-    },
-    {
-      title: '合作伙伴',
-      dataIndex: 'partner_name',
-      key: 'partner_name',
-      width: 120,
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      width: 90,
-      render: (source: string) => {
-        const s = sourceMap[source]
-        return <Tag color={s.color}>{s.text}</Tag>
-      },
-    },
-    {
-      title: '改进目标',
-      dataIndex: 'target',
-      key: 'target',
-      width: 180,
-      ellipsis: true,
-    },
-    {
-      title: '截止日期',
-      dataIndex: 'deadline',
-      key: 'deadline',
-      width: 110,
-      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 90,
-      render: (status: string) => {
-        const s = needStatusMap[status]
-        return <Badge status={s.color as 'success' | 'processing' | 'error' | 'default' | 'warning'} text={s.text} />
-      },
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 150,
-      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-',
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 200,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          <Button type="link" size="small" icon={<FileTextOutlined />} onClick={() => handleViewDetail(record, 'need')} title="查看详情" />
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditNeed(record)} title="编辑" />
-          {record.status === 'OPEN' && (
-            <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => handleCreatePlan(record)} title="创建计划">
-              创建计划
-            </Button>
-          )}
-          {record.status === 'IN_PROGRESS' && (
-            <Popconfirm
-              title="确认解决"
-              description="确定将此需求标记为已解决？"
-              onConfirm={() => handleResolveNeed(record)}
-              okText="确认"
-              cancelText="取消"
-            >
-              <Button type="link" size="small" icon={<CheckCircleOutlined />} title="标记解决" />
-            </Popconfirm>
-          )}
-          {record.status === 'RESOLVED' && (
-            <Popconfirm
-              title="确认关闭"
-              description="确定关闭此需求？"
-              onConfirm={() => handleCloseNeed(record)}
-              okText="确认"
-              cancelText="取消"
-            >
-              <Button type="link" size="small" icon={<CloseCircleOutlined />} title="关闭需求" />
-            </Popconfirm>
-          )}
-        </Space>
-      ),
-    },
+    { title: '需求标题', dataIndex: 'title', key: 'title', width: 200, ellipsis: true, render: (text: string) => <span style={{ fontWeight: 500, color: colorPalette.textPrimary }}>{text}</span> },
+    { title: '合作伙伴', dataIndex: 'partner_name', key: 'partner_name', width: 120 },
+    { title: '来源', dataIndex: 'source', key: 'source', width: 90, render: (source: string) => <Tag color={sourceMap[source]?.color}>{sourceMap[source]?.text}</Tag> },
+    { title: '改进目标', dataIndex: 'target', key: 'target', width: 180, ellipsis: true, render: (text: string) => <span style={{ color: colorPalette.textSecondary, fontSize: 13 }}>{text}</span> },
+    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 110, render: (date: string) => <span style={{ color: date && dayjs(date).isBefore(dayjs()) ? colorPalette.error : colorPalette.textSecondary, fontSize: 13 }}>{date ? dayjs(date).format('YYYY-MM-DD') : '-'}</span> },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (status: string) => {
+      const s = needStatusMap[status]
+      return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 500, background: s?.bg, color: s?.color }}>{s?.text || status}</span>
+    }},
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 150, render: (date: string) => <span style={{ color: colorPalette.textMuted, fontSize: 13 }}>{date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'}</span> },
+    { title: '操作', key: 'action', width: 220, fixed: 'right', render: (_, record) => (
+      <Space size="small">
+        <Button type="link" size="small" icon={<FileTextOutlined />} onClick={() => handleViewDetail(record, 'need')} title="查看详情" style={{ padding: '2px 6px' }}>详情</Button>
+        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditNeed(record)} title="编辑" style={{ padding: '2px 6px' }}>编辑</Button>
+        {record.status === 'OPEN' && <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => handleCreatePlan(record)} title="创建计划" style={{ padding: '2px 6px', color: colorPalette.purple }}>创建计划</Button>}
+        {record.status === 'IN_PROGRESS' && <Popconfirm title="确认解决" description="确定将此需求标记为已解决？" onConfirm={() => handleResolveNeed(record)} okText="确认" cancelText="取消"><Button type="link" size="small" icon={<CheckCircleOutlined />} title="标记解决" style={{ padding: '2px 6px', color: colorPalette.success }} /></Popconfirm>}
+        {record.status === 'RESOLVED' && <Popconfirm title="确认关闭" description="确定关闭此需求？" onConfirm={() => handleCloseNeed(record)} okText="确认" cancelText="取消"><Button type="link" size="small" icon={<CloseCircleOutlined />} title="关闭需求" style={{ padding: '2px 6px', color: colorPalette.textMuted }} /></Popconfirm>}
+      </Space>
+    )},
   ]
 
   const planColumns: ColumnsType<ImprovementPlan> = [
-    {
-      title: '计划标题',
-      dataIndex: 'title',
-      key: 'title',
-      width: 180,
-      ellipsis: true,
-    },
-    {
-      title: '所属需求',
-      dataIndex: 'need_title',
-      key: 'need_title',
-      width: 150,
-      ellipsis: true,
-    },
-    {
-      title: '合作伙伴',
-      dataIndex: 'partner_name',
-      key: 'partner_name',
-      width: 120,
-    },
-    {
-      title: '责任人',
-      dataIndex: 'developer_name',
-      key: 'developer_name',
-      width: 80,
-      render: (name: string) => name || '-',
-    },
-    {
-      title: '进度',
-      dataIndex: 'progress',
-      key: 'progress',
-      width: 120,
-      render: (progress: number) => <Progress percent={progress} size="small" />,
-    },
-    {
-      title: '截止日期',
-      dataIndex: 'end_date',
-      key: 'end_date',
-      width: 110,
-      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 90,
-      render: (status: string) => {
-        const s = planStatusMap[status]
-        return <Badge status={s.color as 'success' | 'processing' | 'error' | 'default' | 'warning'} text={s.text} />
-      },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 180,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space size="small">
-          <Button type="link" size="small" onClick={() => handleViewDetail(record, 'plan')} title="查看详情">
-            查看
-          </Button>
-          {record.status === 'APPROVED' && (
-            <Button type="link" size="small" onClick={() => handleStatusChange(record, 'IN_PROGRESS')} title="开始执行">
-              开始执行
-            </Button>
-          )}
-          {record.status === 'IN_PROGRESS' && (
-            <>
-              <Button type="link" size="small" onClick={() => {
-                setSelectedItem(record)
-                setProgressModalVisible(true)
-              }} title="更新进度">
-                更新进度
-              </Button>
-              <Button type="link" size="small" onClick={() => {
-                setSelectedItem(record)
-                setAdjustModalVisible(true)
-              }} title="调整计划">
-                调整
-              </Button>
-            </>
-          )}
-          {record.status === 'IN_PROGRESS' && record.progress >= 100 && (
-            <Popconfirm
-              title="确认完成"
-              description="确定此计划已完成？"
-              onConfirm={() => handleStatusChange(record, 'COMPLETED')}
-              okText="确认"
-              cancelText="取消"
-            >
-              <Button type="link" size="small" icon={<CheckCircleOutlined />} title="完成" />
-            </Popconfirm>
-          )}
-        </Space>
-      ),
-    },
+    { title: '计划标题', dataIndex: 'title', key: 'title', width: 180, ellipsis: true, render: (text: string) => <span style={{ fontWeight: 500, color: colorPalette.textPrimary }}>{text}</span> },
+    { title: '所属需求', dataIndex: 'need_title', key: 'need_title', width: 150, ellipsis: true, render: (text: string) => <span style={{ color: colorPalette.textSecondary, fontSize: 13 }}>{text || '-'}</span> },
+    { title: '合作伙伴', dataIndex: 'partner_name', key: 'partner_name', width: 120 },
+    { title: '责任人', dataIndex: 'developer_name', key: 'developer_name', width: 80, render: (name: string) => <span style={{ color: name ? colorPalette.textPrimary : colorPalette.textMuted, fontSize: 13 }}>{name || '-'}</span> },
+    { title: '进度', dataIndex: 'progress', key: 'progress', width: 130, render: (progress: number) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Progress percent={progress} size="small" strokeColor={progress === 100 ? colorPalette.success : colorPalette.primary} style={{ marginBottom: 0, flex: 1 }} />
+        <span style={{ color: colorPalette.textSecondary, fontSize: 12, minWidth: 32 }}>{progress}%</span>
+      </div>
+    )},
+    { title: '截止日期', dataIndex: 'end_date', key: 'end_date', width: 110, render: (date: string) => <span style={{ color: date && dayjs(date).isBefore(dayjs()) ? colorPalette.error : colorPalette.textSecondary, fontSize: 13 }}>{date ? dayjs(date).format('YYYY-MM-DD') : '-'}</span> },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (status: string) => {
+      const s = planStatusMap[status]
+      return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 500, background: s?.bg, color: s?.color }}>{s?.text || status}</span>
+    }},
+    { title: '操作', key: 'action', width: 220, fixed: 'right', render: (_, record) => (
+      <Space size="small">
+        <Button type="link" size="small" onClick={() => handleViewDetail(record, 'plan')} title="查看详情" style={{ padding: '2px 6px' }}>详情</Button>
+        {record.status === 'APPROVED' && <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handleStatusChange(record, 'IN_PROGRESS')} title="开始执行" style={{ padding: '2px 6px', color: colorPalette.success }}>开始执行</Button>}
+        {record.status === 'IN_PROGRESS' && <><Button type="link" size="small" onClick={() => { setSelectedItem(record); setProgressModalVisible(true) }} title="更新进度" style={{ padding: '2px 6px', color: colorPalette.primary }}>更新进度</Button><Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => { setSelectedItem(record); setAdjustModalVisible(true) }} title="调整计划" style={{ padding: '2px 6px', color: colorPalette.warning }}>调整</Button></>}
+        {record.status === 'IN_PROGRESS' && record.progress >= 100 && <Popconfirm title="确认完成" description="确定此计划已完成？" onConfirm={() => handleStatusChange(record, 'COMPLETED')} okText="确认" cancelText="取消"><Button type="link" size="small" icon={<CheckCircleOutlined />} title="完成" style={{ padding: '2px 6px', color: colorPalette.success }} /></Popconfirm>}
+      </Space>
+    )},
   ]
 
-  // Statistics
   const stats = {
     needTotal: needs.length,
     needOpen: needs.filter(n => n.status === 'OPEN').length,
     planActive: plans.filter(p => p.status === 'IN_PROGRESS').length,
     planCompleted: plans.filter(p => p.status === 'COMPLETED').length,
-    avgProgress: plans.length > 0 ? Math.round(plans.reduce((sum, p) => sum + p.progress, 0) / plans.length) : 0,
   }
 
-  // Timeline color mapping
   const timelineColorMap: Record<string, string> = {
-    need_created: 'blue',
-    plan_created: 'blue',
-    plan_approved: 'green',
-    plan_rejected: 'red',
-    progress_updated: 'cyan',
-    plan_completed: 'green',
-    need_resolved: 'green',
+    need_created: '#1890ff',
+    plan_created: '#1890ff',
+    plan_approved: '#22c55e',
+    plan_rejected: '#ef4444',
+    progress_updated: '#06b6d4',
+    plan_completed: '#22c55e',
+    need_resolved: '#22c55e',
   }
 
-  // ============ Render ============
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 20, marginBottom: 24, fontWeight: 600 }}>正向改进管理</h1>
+    <div style={{ padding: 28, maxWidth: 1400, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: colorPalette.textPrimary, letterSpacing: '-0.02em', marginBottom: 4 }}>正向改进管理</h1>
+          <p style={{ fontSize: 14, color: colorPalette.textSecondary }}>改进需求发起、计划跟踪、验收闭环</p>
+        </div>
+      </div>
 
-      <Tabs activeKey={activeTab} onChange={setActiveTab} type="card">
-        {/* 改进需求 Tab */}
-        <TabPane tab={<span><FileTextOutlined /> 改进需求</span>} key="needs">
-          {/* Statistics */}
-          <Row gutter={16} style={{ marginBottom: 24 }}>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="需求总数" value={stats.needTotal} valueStyle={{ color: '#1890ff' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="待处理" value={stats.needOpen} valueStyle={{ color: '#faad14' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="进行中计划" value={stats.planActive} valueStyle={{ color: '#1890ff' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="已完成计划" value={stats.planCompleted} valueStyle={{ color: '#52c41a' }} />
-              </Card>
-            </Col>
-          </Row>
+      <Row gutter={20} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bordered={false} style={{ borderTop: `3px solid ${colorPalette.primary}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 22 } }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.primaryLight, marginBottom: 16 }}>
+              <FileTextOutlined style={{ fontSize: 22, color: colorPalette.primary }} />
+            </div>
+            <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>需求总数</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginTop: 4 }}>{stats.needTotal}</div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bordered={false} style={{ borderTop: `3px solid ${colorPalette.warning}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 22 } }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.warningLight, marginBottom: 16 }}>
+              <ExclamationCircleOutlined style={{ fontSize: 22, color: colorPalette.warning }} />
+            </div>
+            <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>待处理需求</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginTop: 4 }}>{stats.needOpen}</div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bordered={false} style={{ borderTop: `3px solid ${colorPalette.purple}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 22 } }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.purpleLight, marginBottom: 16 }}>
+              <PlayCircleOutlined style={{ fontSize: 22, color: colorPalette.purple }} />
+            </div>
+            <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>进行中计划</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginTop: 4 }}>{stats.planActive}</div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bordered={false} style={{ borderTop: `3px solid ${colorPalette.success}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 22 } }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.successLight, marginBottom: 16 }}>
+              <CheckCircleOutlined style={{ fontSize: 22, color: colorPalette.success }} />
+            </div>
+            <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>已完成计划</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginTop: 4 }}>{stats.planCompleted}</div>
+          </Card>
+        </Col>
+      </Row>
 
-          {/* Filter Bar */}
-          <Space style={{ marginBottom: 16 }} wrap>
-            <Select
-              placeholder="选择状态"
-              style={{ width: 120 }}
-              allowClear
-              value={filters.status}
-              onChange={v => setFilters({ ...filters, status: v || undefined })}
-            >
-              <Select.Option value="OPEN">待处理</Select.Option>
-              <Select.Option value="IN_PROGRESS">进行中</Select.Option>
-              <Select.Option value="RESOLVED">已解决</Select.Option>
-              <Select.Option value="CLOSED">已关闭</Select.Option>
-            </Select>
-            <Select
-              placeholder="选择来源"
-              style={{ width: 120 }}
-              allowClear
-              value={filters.source}
-              onChange={v => setFilters({ ...filters, source: v || undefined })}
-            >
-              <Select.Option value="audit">稽核</Select.Option>
-              <Select.Option value="assessment">评估</Select.Option>
-              <Select.Option value="manual">手动</Select.Option>
-            </Select>
-            <Select
-              placeholder="选择合作伙伴"
-              style={{ width: 180 }}
-              allowClear
-              value={filters.partner_id}
-              onChange={v => setFilters({ ...filters, partner_id: v || undefined })}
-            >
-              {partners.map(p => (
-                <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
-              ))}
-            </Select>
-            <Button type="primary" icon={<ExclamationCircleOutlined />} onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateNeed}>
-              新建需求
-            </Button>
-            <Button icon={<LinkOutlined />} onClick={() => setTriggerModalVisible(true)}>
-              从稽核/评估触发
-            </Button>
-          </Space>
+      <div style={{ background: colorPalette.card, borderRadius: 14, boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)', overflow: 'hidden' }}>
+        <div style={{ borderBottom: `1px solid ${colorPalette.borderLight}`, padding: '0 24px', background: colorPalette.card }}>
+          <Tabs activeKey={activeTab} onChange={setActiveTab} size="large" tabBarStyle={{ marginBottom: 0, borderBottom: 'none' }}>
+            <TabPane tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><FileTextOutlined /> 改进需求{stats.needOpen > 0 && <span style={{ background: colorPalette.warning, color: '#fff', borderRadius: 10, fontSize: 11, fontWeight: 600, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>{stats.needOpen}</span>}</span>} key="needs" />
+            <TabPane tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><TeamOutlined /> 改进计划{stats.planActive > 0 && <span style={{ background: colorPalette.purple, color: '#fff', borderRadius: 10, fontSize: 11, fontWeight: 600, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>{stats.planActive}</span>}</span>} key="plans" />
+            <TabPane tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><HistoryOutlined /> 改进历史</span>} key="history" />
+          </Tabs>
+        </div>
 
-          {/* Table */}
-          <Table
-            columns={needColumns}
-            dataSource={needs}
-            rowKey="id"
-            loading={loading}
-            pagination={pagination}
-            onChange={handleTableChange}
-            scroll={{ x: 1300 }}
-            size="middle"
-          />
-        </TabPane>
+        <div style={{ padding: 24 }}>
+          {activeTab === 'needs' && (
+            <>
+              <div style={{ background: colorPalette.bg, borderRadius: 10, padding: 20, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <Select placeholder="选择状态" style={{ width: 130 }} allowClear value={filters.status} onChange={v => { const newFilters = { ...filters, status: v || undefined }; setFilters(newFilters); handleSearch(newFilters); }} size="middle">
+                  <Select.Option value="OPEN">待处理</Select.Option>
+                  <Select.Option value="IN_PROGRESS">进行中</Select.Option>
+                  <Select.Option value="RESOLVED">已解决</Select.Option>
+                  <Select.Option value="CLOSED">已关闭</Select.Option>
+                </Select>
+                <Select placeholder="选择来源" style={{ width: 130 }} allowClear value={filters.source} onChange={v => { const newFilters = { ...filters, source: v || undefined }; setFilters(newFilters); handleSearch(newFilters); }} size="middle">
+                  <Select.Option value="audit">稽核</Select.Option>
+                  <Select.Option value="assessment">评估</Select.Option>
+                  <Select.Option value="manual">手动</Select.Option>
+                </Select>
+                <Select placeholder="选择合作伙伴" style={{ width: 180 }} allowClear value={filters.partner_id} onChange={v => { const newFilters = { ...filters, partner_id: v || undefined }; setFilters(newFilters); handleSearch(newFilters); }} size="middle">
+                  {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
+                </Select>
+                <div style={{ flex: 1 }} />
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateNeed} size="middle" style={{ borderRadius: 8 }}>新建需求</Button>
+                <Button icon={<LinkOutlined />} onClick={() => setTriggerModalVisible(true)} size="middle" style={{ borderRadius: 8, color: colorPalette.purple, borderColor: colorPalette.purple }}>从稽核/评估触发</Button>
+              </div>
+              <Table columns={needColumns} dataSource={needs} rowKey="id" loading={loading} pagination={pagination} onChange={handleTableChange} scroll={{ x: 1300 }} size="middle" style={{ borderRadius: 8, overflow: 'hidden' }} />
+            </>
+          )}
 
-        {/* 改进计划 Tab */}
-        <TabPane tab={<span><TeamOutlined /> 改进计划</span>} key="plans">
-          <Table
-            columns={planColumns}
-            dataSource={plans}
-            rowKey="id"
-            loading={loading}
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 1200 }}
-            size="middle"
-          />
-        </TabPane>
+          {activeTab === 'plans' && (
+            <Table columns={planColumns} dataSource={plans} rowKey="id" loading={loading} pagination={{ pageSize: 10 }} scroll={{ x: 1200 }} size="middle" style={{ borderRadius: 8, overflow: 'hidden' }} />
+          )}
 
-        {/* 改进历史 Tab */}
-        <TabPane tab={<span><HistoryOutlined /> 改进历史</span>} key="history">
-          <Card>
-            {timelineEvents.length > 0 ? (
-              <Timeline
-                mode="left"
-                items={timelineEvents.map(event => ({
-                  color: timelineColorMap[event.event_type] || 'blue',
-                  label: dayjs(event.created_at).format('YYYY-MM-DD HH:mm'),
+          {activeTab === 'history' && (
+            timelineEvents.length > 0 ? (
+              <div style={{ maxWidth: 800 }}>
+                <Timeline mode="left" items={timelineEvents.map(event => ({
+                  color: timelineColorMap[event.event_type] || '#1890ff',
+                  label: <span style={{ fontSize: 12, color: colorPalette.textMuted, fontFamily: 'monospace' }}>{dayjs(event.created_at).format('MM-DD HH:mm')}</span>,
                   children: (
-                    <div>
-                      <p style={{ margin: 0, fontSize: 14 }}>{event.description}</p>
-                      {event.operator_name && (
-                        <span style={{ color: '#888', fontSize: 12 }}>
-                          操作人: {event.operator_name}
-                        </span>
-                      )}
+                    <div style={{ background: colorPalette.bg, borderRadius: 8, padding: '10px 14px', border: `1px solid ${colorPalette.border}` }}>
+                      <p style={{ margin: 0, fontSize: 13, color: colorPalette.textPrimary, lineHeight: 1.6 }}>{event.description}</p>
+                      {event.operator_name && <span style={{ color: colorPalette.textMuted, fontSize: 12, marginTop: 4, display: 'block' }}>操作人: {event.operator_name}</span>}
                     </div>
                   ),
-                }))}
-              />
+                }))} />
+              </div>
             ) : (
-              <Empty description="暂无改进历史记录" />
-            )}
-          </Card>
-        </TabPane>
-      </Tabs>
+              <Empty description="暂无改进历史记录" style={{ padding: 40 }} />
+            )
+          )}
+        </div>
+      </div>
 
-      {/* Create/Edit Need Modal */}
-      <Modal
-        title={editingNeed ? '编辑改进需求' : '新建改进需求'}
-        open={needModalVisible}
-        onOk={handleNeedSubmit}
-        onCancel={() => setNeedModalVisible(false)}
-        width={600}
-        okText={editingNeed ? '保存' : '创建'}
-        cancelText="取消"
-      >
+      <Modal title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, borderBottom: `2px solid ${colorPalette.primary}`, paddingBottom: 12, marginBottom: -16 }}>
+          <div style={{ width: 4, height: 18, background: colorPalette.primary, borderRadius: 2 }} />
+          {editingNeed ? '编辑改进需求' : '新建改进需求'}
+        </div>
+      } open={needModalVisible} onOk={handleNeedSubmit} onCancel={() => setNeedModalVisible(false)} width={600} okText={editingNeed ? '保存' : '创建'} cancelText="取消" style={{ top: 120 }} styles={{ body: { paddingTop: 20 } }}>
         <Form form={needForm} layout="vertical" requiredMark="optional">
-          <Form.Item
-            label="需求标题"
-            name="title"
-            rules={[{ required: true, message: '请输入需求标题' }]}
-          >
-            <Input placeholder="请输入需求标题" maxLength={100} />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>需求标题</span>} name="title" rules={[{ required: true, message: '请输入需求标题' }]}>
+            <Input placeholder="请输入需求标题" maxLength={100} style={{ borderRadius: 8 }} />
           </Form.Item>
-
-          <Form.Item
-            label="合作伙伴"
-            name="partner_id"
-            rules={[{ required: true, message: '请选择合作伙伴' }]}
-          >
-            <Select placeholder="选择合作伙伴" allowClear>
-              {partners.map(p => (
-                <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
-              ))}
+          <Form.Item label={<span style={{ fontWeight: 500 }}>合作伙伴</span>} name="partner_id" rules={[{ required: true, message: '请选择合作伙伴' }]}>
+            <Select placeholder="选择合作伙伴" allowClear style={{ borderRadius: 8 }}>
+              {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
             </Select>
           </Form.Item>
-
-          <Form.Item
-            label="改进目标"
-            name="target"
-            rules={[{ required: true, message: '请输入改进目标' }]}
-          >
-            <TextArea rows={2} placeholder="请输入具体、可衡量的改进目标" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>改进目标</span>} name="target" rules={[{ required: true, message: '请输入改进目标' }]}>
+            <TextArea rows={2} placeholder="请输入具体、可衡量的改进目标" style={{ borderRadius: 8 }} />
           </Form.Item>
-
-          <Form.Item label="需求描述" name="description">
-            <TextArea rows={3} placeholder="请输入详细描述" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>需求描述</span>} name="description">
+            <TextArea rows={3} placeholder="请输入详细描述" style={{ borderRadius: 8 }} />
           </Form.Item>
-
-          <Form.Item label="截止日期" name="deadline">
-            <DatePicker style={{ width: '100%' }} />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>截止日期</span>} name="deadline">
+            <DatePicker style={{ width: '100%', borderRadius: 8 }} />
           </Form.Item>
-
-          <Divider />
-
-          <Form.Item label="来源信息（可选）" style={{ marginBottom: 0 }}>
-            <span style={{ color: '#999', fontSize: 12 }}>
-              如果是从稽核或评估触发的需求，系统将自动关联来源信息
-            </span>
-          </Form.Item>
+          <Divider style={{ margin: '12px 0' }} />
+          <div style={{ fontSize: 12, color: colorPalette.textMuted, lineHeight: 1.6 }}>如果是从稽核或评估触发的需求，系统将自动关联来源信息</div>
         </Form>
       </Modal>
 
-      {/* Create Plan Modal */}
-      <Modal
-        title="创建改进计划"
-        open={planModalVisible}
-        onOk={handlePlanSubmit}
-        onCancel={() => setPlanModalVisible(false)}
-        width={640}
-        okText="创建"
-        cancelText="取消"
-      >
-        {selectedItem && 'partner_name' in selectedItem && (
-          <Alert
-            message="正在为需求创建改进计划"
-            description={`需求: ${selectedItem.title}`}
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
+      <Modal title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, borderBottom: `2px solid ${colorPalette.purple}`, paddingBottom: 12, marginBottom: -16 }}>
+          <div style={{ width: 4, height: 18, background: colorPalette.purple, borderRadius: 2 }} />
+          创建改进计划
+        </div>
+      } open={planModalVisible} onOk={handlePlanSubmit} onCancel={() => setPlanModalVisible(false)} width={640} okText="创建" cancelText="取消" style={{ top: 120 }} styles={{ body: { paddingTop: 20 } }}>
+        {selectedItem && 'partner_name' in selectedItem && <Alert message="正在为需求创建改进计划" description={`需求: ${selectedItem.title}`} type="info" showIcon style={{ marginBottom: 16, borderRadius: 8 }} />}
         <Form form={planForm} layout="vertical" requiredMark="optional">
-          <Form.Item
-            label="计划标题"
-            name="title"
-            rules={[{ required: true, message: '请输入计划标题' }]}
-          >
-            <Input placeholder="请输入计划标题" maxLength={100} />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>计划标题</span>} name="title" rules={[{ required: true, message: '请输入计划标题' }]}>
+            <Input placeholder="请输入计划标题" maxLength={100} style={{ borderRadius: 8 }} />
           </Form.Item>
-
-          <Form.Item
-            label="改进措施"
-            name="measures"
-            rules={[{ required: true, message: '请详细描述改进措施' }]}
-          >
-            <TextArea rows={5} placeholder="请详细描述具体的改进措施和步骤" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>改进措施</span>} name="measures" rules={[{ required: true, message: '请详细描述改进措施' }]}>
+            <TextArea rows={5} placeholder="请详细描述具体的改进措施和步骤" style={{ borderRadius: 8 }} />
           </Form.Item>
-
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="开始日期" name="start_date">
-                <DatePicker style={{ width: '100%' }} />
+              <Form.Item label={<span style={{ fontWeight: 500 }}>开始日期</span>} name="start_date">
+                <DatePicker style={{ width: '100%', borderRadius: 8 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="截止日期" name="end_date">
-                <DatePicker style={{ width: '100%' }} />
+              <Form.Item label={<span style={{ fontWeight: 500 }}>截止日期</span>} name="end_date">
+                <DatePicker style={{ width: '100%', borderRadius: 8 }} />
               </Form.Item>
             </Col>
           </Row>
-
-          <Form.Item label="责任人" name="developer_id">
-            <Select placeholder="选择责任人" allowClear>
-              {developers.map(d => (
-                <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
-              ))}
+          <Form.Item label={<span style={{ fontWeight: 500 }}>责任人</span>} name="developer_id">
+            <Select placeholder="选择责任人" allowClear style={{ borderRadius: 8 }}>
+              {developers.map(d => <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>)}
             </Select>
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Progress Update Modal */}
-      <Modal
-        title="更新进度"
-        open={progressModalVisible}
-        onOk={handleProgressUpdate}
-        onCancel={() => {
-          setProgressModalVisible(false)
-          progressForm.resetFields()
-        }}
-        width={500}
-        okText="提交"
-        cancelText="取消"
-      >
+      <Modal title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, borderBottom: `2px solid ${colorPalette.primary}`, paddingBottom: 12, marginBottom: -16 }}>
+          <div style={{ width: 4, height: 18, background: colorPalette.primary, borderRadius: 2 }} />
+          更新进度
+        </div>
+      } open={progressModalVisible} onOk={handleProgressUpdate} onCancel={() => { setProgressModalVisible(false); progressForm.resetFields() }} width={500} okText="提交" cancelText="取消" style={{ top: 120 }} styles={{ body: { paddingTop: 20 } }}>
         <Form form={progressForm} layout="vertical" requiredMark="optional">
-          <Form.Item
-            label="当前进度"
-            name="progress"
-            rules={[{ required: true, message: '请输入进度' }]}
-          >
-            <Input type="number" min={0} max={100} placeholder="0-100" addonAfter="%" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>当前进度</span>} name="progress" rules={[{ required: true, message: '请输入进度' }]}>
+            <Input type="number" min={0} max={100} placeholder="0-100" style={{ borderRadius: 8 }} suffix={<span style={{ color: colorPalette.textMuted }}>%</span>} />
           </Form.Item>
-
-          <Form.Item
-            label="进度说明"
-            name="content"
-            rules={[{ required: true, message: '请输入进度说明' }]}
-          >
-            <TextArea rows={4} placeholder="请描述本次进度更新完成的工作内容" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>进度说明</span>} name="content" rules={[{ required: true, message: '请输入进度说明' }]}>
+            <TextArea rows={4} placeholder="请描述本次进度更新完成的工作内容" style={{ borderRadius: 8 }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Adjustment Modal */}
-      <Modal
-        title="计划调整申请"
-        open={adjustModalVisible}
-        onOk={handleAdjustment}
-        onCancel={() => {
-          setAdjustModalVisible(false)
-          adjustForm.resetFields()
-        }}
-        width={600}
-        okText="提交申请"
-        cancelText="取消"
-      >
-        <Alert
-          message="计划调整需要审批"
-          description="调整后的计划将进入待审批状态，审批通过后生效"
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
+      <Modal title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, borderBottom: `2px solid ${colorPalette.warning}`, paddingBottom: 12, marginBottom: -16 }}>
+          <div style={{ width: 4, height: 18, background: colorPalette.warning, borderRadius: 2 }} />
+          计划调整申请
+        </div>
+      } open={adjustModalVisible} onOk={handleAdjustment} onCancel={() => { setAdjustModalVisible(false); adjustForm.resetFields() }} width={600} okText="提交申请" cancelText="取消" style={{ top: 120 }} styles={{ body: { paddingTop: 20 } }}>
+        <Alert message="计划调整需要审批" description="调整后的计划将进入待审批状态，审批通过后生效" type="warning" showIcon style={{ marginBottom: 16, borderRadius: 8 }} />
         <Form form={adjustForm} layout="vertical" requiredMark="optional">
-          <Form.Item
-            label="调整后的改进措施"
-            name="measures"
-            rules={[{ required: true, message: '请输入调整后的措施' }]}
-          >
-            <TextArea rows={4} placeholder="请详细描述调整后的改进措施" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>调整后的改进措施</span>} name="measures" rules={[{ required: true, message: '请输入调整后的措施' }]}>
+            <TextArea rows={4} placeholder="请详细描述调整后的改进措施" style={{ borderRadius: 8 }} />
           </Form.Item>
-
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="新的截止日期" name="end_date">
-                <DatePicker style={{ width: '100%' }} />
+              <Form.Item label={<span style={{ fontWeight: 500 }}>新的截止日期</span>} name="end_date">
+                <DatePicker style={{ width: '100%', borderRadius: 8 }} />
               </Form.Item>
             </Col>
           </Row>
-
-          <Form.Item
-            label="调整原因"
-            name="reason"
-            rules={[{ required: true, message: '请输入调整原因' }]}
-          >
-            <TextArea rows={2} placeholder="请说明计划调整的原因" />
+          <Form.Item label={<span style={{ fontWeight: 500 }}>调整原因</span>} name="reason" rules={[{ required: true, message: '请输入调整原因' }]}>
+            <TextArea rows={2} placeholder="请说明计划调整的原因" style={{ borderRadius: 8 }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Trigger from Audit/Assessment Modal */}
-      <Modal
-        title="从稽核/评估触发"
-        open={triggerModalVisible}
-        onCancel={() => setTriggerModalVisible(false)}
-        footer={null}
-        width={700}
-      >
-        <Tabs defaultActiveKey="assessment">
-          <TabPane tab="从评估触发" key="assessment">
-            <List
-              dataSource={assessments}
-              renderItem={item => (
-                <List.Item
-                  actions={[
-                    <Button
-                      type="primary"
-                      size="small"
-                      onClick={() => handleTriggerFromSource('assessment', item)}
-                    >
-                      创建需求
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={item.title}
-                    description={`合作伙伴: ${item.partner_name} | 评分: ${item.score}分`}
-                  />
-                </List.Item>
-              )}
-            />
+      <Modal title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, borderBottom: `2px solid ${colorPalette.purple}`, paddingBottom: 12, marginBottom: -16 }}>
+          <div style={{ width: 4, height: 18, background: colorPalette.purple, borderRadius: 2 }} />
+          从稽核/评估触发
+        </div>
+      } open={triggerModalVisible} onCancel={() => setTriggerModalVisible(false)} footer={null} width={700} style={{ top: 120 }} styles={{ body: { padding: '16px 4px 4px' } }}>
+        <Tabs defaultActiveKey="assessment" tabBarStyle={{ marginBottom: 0 }}>
+          <TabPane tab={<span style={{ fontWeight: 500 }}>从评估触发</span>} key="assessment">
+            <List dataSource={assessments} renderItem={item => (
+              <List.Item style={{ padding: '12px 0' }} actions={[<Button type="primary" size="small" icon={<PlusCircleOutlined />} onClick={() => handleTriggerFromSource('assessment', item)} style={{ borderRadius: 8, background: colorPalette.primary, borderColor: colorPalette.primary }}>创建需求</Button>]}>
+                <List.Item.Meta title={<span style={{ fontSize: 14, fontWeight: 500, color: colorPalette.textPrimary }}>{item.title}</span>} description={<span style={{ fontSize: 13, color: colorPalette.textSecondary }}>合作伙伴: <strong>{item.partner_name}</strong> | 评分: <strong style={{ color: item.score < 60 ? colorPalette.error : colorPalette.warning }}>{item.score}分</strong></span>} />
+              </List.Item>
+            )} />
           </TabPane>
-          <TabPane tab="从稽核触发" key="audit">
-            <List
-              dataSource={audits}
-              renderItem={item => (
-                <List.Item
-                  actions={[
-                    <Button
-                      type="primary"
-                      size="small"
-                      onClick={() => handleTriggerFromSource('audit', item)}
-                    >
-                      创建需求
-                    </Button>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={item.title}
-                    description={`合作伙伴: ${item.partner_name} | 稽核发现: ${item.finding}`}
-                  />
-                </List.Item>
-              )}
-            />
+          <TabPane tab={<span style={{ fontWeight: 500 }}>从稽核触发</span>} key="audit">
+            <List dataSource={audits} renderItem={item => (
+              <List.Item style={{ padding: '12px 0' }} actions={[<Button type="primary" size="small" icon={<PlusCircleOutlined />} onClick={() => handleTriggerFromSource('audit', item)} style={{ borderRadius: 8, background: colorPalette.primary, borderColor: colorPalette.primary }}>创建需求</Button>]}>
+                <List.Item.Meta title={<span style={{ fontSize: 14, fontWeight: 500, color: colorPalette.textPrimary }}>{item.title}</span>} description={<span style={{ fontSize: 13, color: colorPalette.textSecondary }}>合作伙伴: <strong>{item.partner_name}</strong> | 稽核发现: <strong style={{ color: colorPalette.error }}>{item.finding}</strong></span>} />
+              </List.Item>
+            )} />
           </TabPane>
         </Tabs>
       </Modal>
 
-      {/* Detail Drawer */}
-      <Drawer
-        title={detailType === 'need' ? '需求详情' : '计划详情'}
-        open={detailVisible}
-        onClose={() => setDetailVisible(false)}
-        width={720}
+      <Drawer title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 4, height: 18, background: detailType === 'need' ? colorPalette.primary : colorPalette.purple, borderRadius: 2 }} />
+          <span style={{ fontWeight: 600, color: colorPalette.textPrimary }}>{detailType === 'need' ? '需求详情' : '计划详情'}</span>
+        </div>
+      } open={detailVisible} onClose={() => setDetailVisible(false)} width={720} styles={{ header: { borderBottom: `1px solid ${colorPalette.borderLight}`, padding: '20px 24px' }, body: { padding: 0 }, footer: { borderTop: `1px solid ${colorPalette.borderLight}`, padding: '12px 24px' } }}
         extra={
-          selectedItem && (
-            <Space>
-              {detailType === 'need' && (selectedItem as ImprovementNeed).status === 'OPEN' && (
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setDetailVisible(false)
-                    handleCreatePlan(selectedItem as ImprovementNeed)
-                  }}
-                >
-                  创建计划
-                </Button>
-              )}
-              {detailType === 'plan' && (selectedItem as ImprovementPlan).status === 'APPROVED' && (
-                <Button
-                  type="primary"
-                  icon={<PlayCircleOutlined />}
-                  onClick={() => handleStatusChange(selectedItem as ImprovementPlan, 'IN_PROGRESS')}
-                >
-                  开始执行
-                </Button>
-              )}
-            </Space>
-          )
+          <Space>
+            {detailType === 'need' && (selectedItem as ImprovementNeed)?.status === 'OPEN' && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setDetailVisible(false); handleCreatePlan(selectedItem as ImprovementNeed) }} style={{ borderRadius: 8, background: colorPalette.purple, borderColor: colorPalette.purple }}>创建计划</Button>}
+            {detailType === 'plan' && (selectedItem as ImprovementPlan)?.status === 'APPROVED' && <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleStatusChange(selectedItem as ImprovementPlan, 'IN_PROGRESS')} style={{ borderRadius: 8, background: colorPalette.success, borderColor: colorPalette.success }}>开始执行</Button>}
+          </Space>
         }
       >
         {selectedItem && (
-          <Tabs activeKey={detailTab} onChange={setDetailTab}>
-            {/* 基本信息 Tab */}
-            <TabPane tab="基本信息" key="info">
+          <Tabs activeKey={detailTab} onChange={setDetailTab} tabBarStyle={{ borderBottom: `1px solid ${colorPalette.borderLight}`, marginBottom: 0 }}>
+            <TabPane tab={<span style={{ fontWeight: 500 }}>基本信息</span>} key="info">
               {detailType === 'need' ? (
                 <>
-                  <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                    <Descriptions.Item label="需求标题" span={2}>
-                      <strong>{(selectedItem as ImprovementNeed).title}</strong>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="合作伙伴">
-                      {(selectedItem as ImprovementNeed).partner_name}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="来源">
-                      <Tag color={sourceMap[(selectedItem as ImprovementNeed).source]?.color}>
-                        {sourceMap[(selectedItem as ImprovementNeed).source]?.text}
-                      </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="改进目标" span={2}>
-                      {(selectedItem as ImprovementNeed).target}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="需求描述" span={2}>
-                      {(selectedItem as ImprovementNeed).description || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="截止日期">
-                      {(selectedItem as ImprovementNeed).deadline
-                        ? dayjs((selectedItem as ImprovementNeed).deadline).format('YYYY-MM-DD')
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="状态">
-                      <Badge
-                        status={needStatusMap[(selectedItem as ImprovementNeed).status].color as 'success' | 'processing' | 'error' | 'default' | 'warning'}
-                        text={needStatusMap[(selectedItem as ImprovementNeed).status].text}
-                      />
-                    </Descriptions.Item>
-                    <Descriptions.Item label="创建时间">
-                      {dayjs((selectedItem as ImprovementNeed).created_at).format('YYYY-MM-DD HH:mm')}
-                    </Descriptions.Item>
-                    {(selectedItem as ImprovementNeed).source_name && (
-                      <Descriptions.Item label="来源详情" span={2}>
-                        {(selectedItem as ImprovementNeed).source_name}
-                      </Descriptions.Item>
-                    )}
+                  <Descriptions column={2} bordered size="small" style={{ margin: 16 }}>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>需求标题</span>} span={2}><strong style={{ fontSize: 14, color: colorPalette.textPrimary }}>{(selectedItem as ImprovementNeed).title}</strong></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>合作伙伴</span>}>{(selectedItem as ImprovementNeed).partner_name}</Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>来源</span>}><Tag color={sourceMap[(selectedItem as ImprovementNeed).source]?.color}>{sourceMap[(selectedItem as ImprovementNeed).source]?.text}</Tag></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>改进目标</span>} span={2}><span style={{ color: colorPalette.textPrimary }}>{(selectedItem as ImprovementNeed).target}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>需求描述</span>} span={2}><span style={{ color: colorPalette.textSecondary }}>{(selectedItem as ImprovementNeed).description || '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>截止日期</span>}><span style={{ color: (selectedItem as ImprovementNeed).deadline && dayjs((selectedItem as ImprovementNeed).deadline).isBefore(dayjs()) ? colorPalette.error : colorPalette.textPrimary }}>{(selectedItem as ImprovementNeed).deadline ? dayjs((selectedItem as ImprovementNeed).deadline).format('YYYY-MM-DD') : '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>状态</span>}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 500, background: needStatusMap[(selectedItem as ImprovementNeed).status]?.bg, color: needStatusMap[(selectedItem as ImprovementNeed).status]?.color }}>{needStatusMap[(selectedItem as ImprovementNeed).status]?.text}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>创建时间</span>}><span style={{ color: colorPalette.textMuted }}>{dayjs((selectedItem as ImprovementNeed).created_at).format('YYYY-MM-DD HH:mm')}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>更新时间</span>}><span style={{ color: colorPalette.textMuted }}>{(selectedItem as ImprovementNeed).updated_at ? dayjs((selectedItem as ImprovementNeed).updated_at).format('YYYY-MM-DD HH:mm') : '-'}</span></Descriptions.Item>
+                    {(selectedItem as ImprovementNeed).source_name && <Descriptions.Item label={<span style={{ fontWeight: 500 }}>来源详情</span>} span={2}><span style={{ color: colorPalette.textSecondary }}>{(selectedItem as ImprovementNeed).source_name}</span></Descriptions.Item>}
                   </Descriptions>
-
-                  {/* Source Link */}
                   {(selectedItem as ImprovementNeed).source !== 'manual' && (
-                    <Card size="small" title="关联来源" style={{ marginBottom: 16 }}>
-                      <Button type="link" icon={<LinkOutlined />}>
-                        查看{(selectedItem as ImprovementNeed).source === 'audit' ? '稽核' : '评估'}详情
-                      </Button>
-                    </Card>
+                    <div style={{ padding: '0 16px 16px' }}>
+                      <div style={{ background: colorPalette.bg, borderRadius: 8, padding: '12px 16px', border: `1px solid ${colorPalette.border}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: colorPalette.textPrimary, marginBottom: 8 }}>关联来源</div>
+                        <Button type="link" icon={<LinkOutlined />} style={{ padding: 0, color: colorPalette.primary }}>查看{(selectedItem as ImprovementNeed).source === 'audit' ? '稽核' : '评估'}详情 →</Button>
+                      </div>
+                    </div>
                   )}
                 </>
               ) : (
                 <>
-                  <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                    <Descriptions.Item label="计划标题" span={2}>
-                      <strong>{(selectedItem as ImprovementPlan).title}</strong>
+                  <Descriptions column={2} bordered size="small" style={{ margin: 16 }}>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>计划标题</span>} span={2}><strong style={{ fontSize: 14, color: colorPalette.textPrimary }}>{(selectedItem as ImprovementPlan).title}</strong></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>所属需求</span>}><span style={{ color: colorPalette.textSecondary }}>{(selectedItem as ImprovementPlan).need_title || '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>合作伙伴</span>}>{(selectedItem as ImprovementPlan).partner_name}</Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>责任人</span>}><span style={{ color: (selectedItem as ImprovementPlan).developer_name ? colorPalette.textPrimary : colorPalette.textMuted }}>{(selectedItem as ImprovementPlan).developer_name || '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>状态</span>}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 500, background: planStatusMap[(selectedItem as ImprovementPlan).status]?.bg, color: planStatusMap[(selectedItem as ImprovementPlan).status]?.color }}>{planStatusMap[(selectedItem as ImprovementPlan).status]?.text}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>进度</span>} span={2}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Progress percent={(selectedItem as ImprovementPlan).progress} strokeColor={(selectedItem as ImprovementPlan).progress === 100 ? colorPalette.success : colorPalette.primary} style={{ marginBottom: 0, flex: 1 }} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: (selectedItem as ImprovementPlan).progress === 100 ? colorPalette.success : colorPalette.primary, minWidth: 40 }}>{(selectedItem as ImprovementPlan).progress}%</span>
+                      </div>
                     </Descriptions.Item>
-                    <Descriptions.Item label="所属需求">
-                      {(selectedItem as ImprovementPlan).need_title || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="合作伙伴">
-                      {(selectedItem as ImprovementPlan).partner_name}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="责任人">
-                      {(selectedItem as ImprovementPlan).developer_name || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="状态">
-                      <Badge
-                        status={planStatusMap[(selectedItem as ImprovementPlan).status].color as 'success' | 'processing' | 'error' | 'default' | 'warning'}
-                        text={planStatusMap[(selectedItem as ImprovementPlan).status].text}
-                      />
-                    </Descriptions.Item>
-                    <Descriptions.Item label="进度" span={2}>
-                      <Progress percent={(selectedItem as ImprovementPlan).progress} />
-                    </Descriptions.Item>
-                    <Descriptions.Item label="开始日期">
-                      {(selectedItem as ImprovementPlan).start_date
-                        ? dayjs((selectedItem as ImprovementPlan).start_date).format('YYYY-MM-DD')
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="截止日期">
-                      {(selectedItem as ImprovementPlan).end_date
-                        ? dayjs((selectedItem as ImprovementPlan).end_date).format('YYYY-MM-DD')
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="改进措施" span={2}>
-                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                        {(selectedItem as ImprovementPlan).measures}
-                      </pre>
-                    </Descriptions.Item>
-                    {(selectedItem as ImprovementPlan).approval_comment && (
-                      <Descriptions.Item label="审批意见" span={2}>
-                        {(selectedItem as ImprovementPlan).approval_comment}
-                      </Descriptions.Item>
-                    )}
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>开始日期</span>}><span style={{ color: colorPalette.textSecondary }}>{(selectedItem as ImprovementPlan).start_date ? dayjs((selectedItem as ImprovementPlan).start_date).format('YYYY-MM-DD') : '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>截止日期</span>}><span style={{ color: (selectedItem as ImprovementPlan).end_date && dayjs((selectedItem as ImprovementPlan).end_date).isBefore(dayjs()) ? colorPalette.error : colorPalette.textSecondary }}>{(selectedItem as ImprovementPlan).end_date ? dayjs((selectedItem as ImprovementPlan).end_date).format('YYYY-MM-DD') : '-'}</span></Descriptions.Item>
+                    <Descriptions.Item label={<span style={{ fontWeight: 500 }}>改进措施</span>} span={2}><pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: colorPalette.textPrimary, lineHeight: 1.7 }}>{(selectedItem as ImprovementPlan).measures}</pre></Descriptions.Item>
+                    {(selectedItem as ImprovementPlan).approval_comment && <Descriptions.Item label={<span style={{ fontWeight: 500 }}>审批意见</span>} span={2}><span style={{ color: colorPalette.textSecondary }}>{(selectedItem as ImprovementPlan).approval_comment}</span></Descriptions.Item>}
                   </Descriptions>
-
-                  {/* Quick Actions */}
                   {(selectedItem as ImprovementPlan).status === 'IN_PROGRESS' && (
-                    <Card size="small" title="快捷操作">
-                      <Space>
-                        <Button
-                          type="primary"
-                          icon={<EditOutlined />}
-                          onClick={() => {
-                            setProgressModalVisible(true)
-                          }}
-                        >
-                          更新进度
-                        </Button>
-                        <Button
-                          icon={<ReloadOutlined />}
-                          onClick={() => {
-                            setAdjustModalVisible(true)
-                          }}
-                        >
-                          调整计划
-                        </Button>
-                        {(selectedItem as ImprovementPlan).progress >= 80 && (
-                          <Popconfirm
-                            title="确认完成"
-                            description="确定此计划已完成？"
-                            onConfirm={() => handleStatusChange(selectedItem as ImprovementPlan, 'COMPLETED')}
-                            okText="确认"
-                            cancelText="取消"
-                          >
-                            <Button icon={<CheckCircleOutlined />}>
-                              标记完成
-                            </Button>
-                          </Popconfirm>
-                        )}
-                      </Space>
-                    </Card>
+                    <div style={{ padding: '0 16px 16px' }}>
+                      <div style={{ background: colorPalette.bg, borderRadius: 8, padding: '12px 16px', border: `1px solid ${colorPalette.border}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: colorPalette.textPrimary, marginBottom: 10 }}>快捷操作</div>
+                        <Space wrap>
+                          <Button type="primary" icon={<EditOutlined />} onClick={() => setProgressModalVisible(true)} style={{ borderRadius: 8, background: colorPalette.primary, borderColor: colorPalette.primary }}>更新进度</Button>
+                          <Button icon={<ReloadOutlined />} onClick={() => setAdjustModalVisible(true)} style={{ borderRadius: 8, color: colorPalette.warning, borderColor: colorPalette.warning }}>调整计划</Button>
+                          {(selectedItem as ImprovementPlan).progress >= 80 && <Popconfirm title="确认完成" description="确定此计划已完成？" onConfirm={() => handleStatusChange(selectedItem as ImprovementPlan, 'COMPLETED')} okText="确认" cancelText="取消"><Button icon={<CheckCircleOutlined />} style={{ borderRadius: 8, color: colorPalette.success, borderColor: colorPalette.success }}>标记完成</Button></Popconfirm>}
+                        </Space>
+                      </div>
+                    </div>
                   )}
                 </>
               )}
             </TabPane>
-
-            {/* 进度记录 Tab */}
             {detailType === 'plan' && (
-              <TabPane tab="进度记录" key="progress">
-                <Space direction="vertical" style={{ width: '100%' }} size="large">
-                  <Steps
-                    current={Math.floor(((selectedItem as ImprovementPlan).progress || 0) / 25)}
-                    items={[
-                      { title: '计划创建' },
-                      { title: '审批通过' },
-                      { title: '执行中' },
-                      { title: '完成' },
-                    ]}
-                  />
-                  <Timeline
-                    mode="left"
-                    items={progressRecords.map(record => ({
-                      color: 'blue',
-                      label: dayjs(record.created_at).format('YYYY-MM-DD HH:mm'),
+              <TabPane tab={<span style={{ fontWeight: 500 }}>进度记录</span>} key="progress">
+                <div style={{ padding: 16 }}>
+                  <Steps current={Math.floor(((selectedItem as ImprovementPlan).progress || 0) / 25)} size="small" style={{ marginBottom: 24 }} items={[{ title: <span style={{ fontSize: 12 }}>计划创建</span> }, { title: <span style={{ fontSize: 12 }}>审批通过</span> }, { title: <span style={{ fontSize: 12 }}>执行中</span> }, { title: <span style={{ fontSize: 12 }}>完成</span> }]} />
+                  {progressRecords.length > 0 ? (
+                    <Timeline mode="left" items={progressRecords.map(record => ({
+                      color: '#1890ff',
+                      label: <span style={{ fontSize: 11, color: colorPalette.textMuted, fontFamily: 'monospace' }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</span>,
                       children: (
-                        <div>
-                          <p style={{ margin: 0 }}>{record.content}</p>
-                          <Space>
-                            <Tag color="green">{record.progress}%</Tag>
-                            {record.operator_name && (
-                              <span style={{ color: '#888', fontSize: 12 }}>
-                                {record.operator_name}
-                              </span>
-                            )}
+                        <div style={{ background: colorPalette.bg, borderRadius: 8, padding: '10px 14px', border: `1px solid ${colorPalette.border}` }}>
+                          <p style={{ margin: 0, fontSize: 13, color: colorPalette.textPrimary, lineHeight: 1.6 }}>{record.content}</p>
+                          <Space size="small" style={{ marginTop: 6 }}>
+                            <Tag color="green" style={{ margin: 0 }}>{record.progress}%</Tag>
+                            {record.operator_name && <span style={{ color: colorPalette.textMuted, fontSize: 12 }}>{record.operator_name}</span>}
                           </Space>
                         </div>
                       ),
-                    }))}
-                  />
-                  {progressRecords.length === 0 && (
-                    <Empty description="暂无进度记录" />
+                    }))} />
+                  ) : (
+                    <Empty description="暂无进度记录" style={{ padding: 40 }} />
                   )}
-                </Space>
+                </div>
               </TabPane>
             )}
-
-            {/* 交付物 Tab */}
             {detailType === 'plan' && (
-              <TabPane tab="交付物" key="deliverables">
-                <Empty description="暂无交付物记录" />
+              <TabPane tab={<span style={{ fontWeight: 500 }}>交付物</span>} key="deliverables">
+                <Empty description="暂无交付物记录" style={{ padding: 40 }} />
               </TabPane>
             )}
           </Tabs>

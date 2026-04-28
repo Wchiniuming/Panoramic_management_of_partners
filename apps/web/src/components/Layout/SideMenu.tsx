@@ -21,12 +21,12 @@ const SideMenu: React.FC<SideMenuProps> = ({ collapsed }) => {
 
   const menuItems = [
     { key: '/dashboard', icon: <HomeOutlined />, label: '首页' },
-    { key: '/users', icon: <UserOutlined />, label: '用户管理' },
-    { key: '/developers', icon: <TeamOutlined />, label: '开发人员管理' },
-    { key: '/tasks', icon: <ScheduleOutlined />, label: '任务登记管理' },
+    { key: '/developers', icon: <TeamOutlined />, label: '开发人员' },
+    { key: '/tasks', icon: <ScheduleOutlined />, label: '任务登记' },
     { key: '/assessment', icon: <AuditOutlined />, label: '厂商评估' },
     { key: '/improvement', icon: <CheckCircleOutlined />, label: '正向改进' },
     { key: '/risks', icon: <WarningOutlined />, label: '风险库' },
+    { key: '/users', icon: <UserOutlined />, label: '用户管理' },
   ]
 
   // Normalize pathname to find matching menu item

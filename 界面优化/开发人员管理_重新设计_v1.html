@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开发人员管理 - 合作伙伴支撑能力全景管理平台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/antd@5.12.8/dist/antd.min.js"></script>
+    <style>
+        :root {
+            --primary: #1890ff;
+            --primary-hover: #40a9ff;
+            --primary-light: rgba(24, 144, 255, 0.08);
+            --success: #22c55e;
+            --success-light: rgba(34, 197, 94, 0.1);
+            --warning: #f59e0b;
+            --warning-light: rgba(245, 158, 11, 0.1);
+            --error: #ef4444;
+            --error-light: rgba(239, 68, 68, 0.1);
+            --purple: #8b5cf6;
+            --purple-light: rgba(139, 92, 246, 0.1);
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Container */
+        .page-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 28px 32px;
+        }
+
+        /* Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 28px;
+        }
+        .page-header__left h1 {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+        }
+        .page-header__left p {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .page-header__actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* Tabs */
+        .tabs-container {
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .tabs-header {
+            display: flex;
+            border-bottom: 1px solid var(--border-light);
+            padding: 0 24px;
+        }
+        .tab-btn {
+            padding: 16px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+        .tab-btn--active {
+            color: var(--primary);
+        }
+        .tab-btn--active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+            border-radius: 2px 2px 0 0;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            padding: 22px;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+        .stat-card--blue { border-top: 3px solid var(--primary); }
+        .stat-card--warning { border-top: 3px solid var(--warning); }
+        .stat-card--success { border-top: 3px solid var(--success); }
+        .stat-card--purple { border-top: 3px solid var(--purple); }
+
+        .stat-card__icon-wrap {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .stat-card--blue .stat-card__icon-wrap { background: var(--primary-light); color: var(--primary); }
+        .stat-card--warning .stat-card__icon-wrap { background: var(--warning-light); color: var(--warning); }
+        .stat-card--success .stat-card__icon-wrap { background: var(--success-light); color: var(--success); }
+        .stat-card--purple .stat-card__icon-wrap { background: var(--purple-light); color: var(--purple); }
+
+        .stat-card__value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1;
+            margin-bottom: 6px;
+            letter-spacing: -0.02em;
+        }
+        .stat-card__label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-sm);
+        }
+        .filter-bar__row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-bar__search {
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+        }
+        .filter-bar__search input {
+            width: 100%;
+            padding: 10px 12px 10px 38px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            transition: var(--transition);
+        }
+        .filter-bar__search input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }
+        .filter-bar__search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .filter-select {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: var(--transition);
+            min-width: 140px;
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }
+
+        /* Action Buttons */
+        .btn {
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: none;
+        }
+        .btn--primary {
+            background: var(--primary);
+            color: white;
+        }
+        .btn--primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+        .btn--secondary {
+            background: var(--card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        .btn--secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .btn--ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        .btn--ghost:hover {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+        .btn--danger {
+            background: var(--error-light);
+            color: var(--error);
+        }
+        .btn--danger:hover {
+            background: var(--error);
+            color: white;
+        }
+        .btn--success {
+            background: var(--success-light);
+            color: var(--success);
+        }
+        .btn--success:hover {
+            background: var(--success);
+            color: white;
+        }
+
+        /* Developer Cards Grid */
+        .developers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .developer-card {
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .developer-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+        .developer-card__header {
+            padding: 20px;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .developer-card__avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, var(--primary) 0%, #36c1fc 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .developer-card__info {
+            flex: 1;
+            min-width: 0;
+        }
+        .developer-card__name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .developer-card__meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .developer-card__badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge--pending {
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+        .badge--approved {
+            background: var(--success-light);
+            color: var(--success);
+        }
+        .badge--rejected {
+            background: var(--error-light);
+            color: var(--error);
+        }
+        .badge--disabled {
+            background: var(--border-light);
+            color: var(--text-muted);
+        }
+
+        .developer-card__body {
+            padding: 20px;
+        }
+        .developer-card__skills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .skill-tag {
+            padding: 4px 10px;
+            background: var(--primary-light);
+            color: var(--primary);
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .skill-tag--more {
+            background: var(--border-light);
+            color: var(--text-secondary);
+        }
+
+        .developer-card__stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-light);
+        }
+        .developer-card__stat {
+            text-align: center;
+        }
+        .developer-card__stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .developer-card__stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .developer-card__footer {
+            padding: 16px 20px;
+            background: var(--bg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .developer-card__date {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .developer-card__actions {
+            display: flex;
+            gap: 8px;
+        }
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--card);
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+        .action-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+        .action-btn--danger:hover {
+            border-color: var(--error);
+            color: var(--error);
+            background: var(--error-light);
+        }
+
+        /* Table View Toggle */
+        .view-toggle {
+            display: flex;
+            gap: 4px;
+            background: var(--bg);
+            padding: 4px;
+            border-radius: var(--radius-sm);
+        }
+        .view-toggle__btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+        }
+        .view-toggle__btn--active {
+            background: var(--card);
+            color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Table Styles */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table th {
+            text-align: left;
+            padding: 14px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+        }
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-light);
+            font-size: 14px;
+        }
+        .data-table tr:hover td {
+            background: var(--bg);
+        }
+        .data-table__skills {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: var(--card);
+            border-top: 1px solid var(--border-light);
+        }
+        .pagination__info {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .pagination__controls {
+            display: flex;
+            gap: 8px;
+        }
+        .pagination__btn {
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--card);
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+        .pagination__btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .pagination__btn--active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+        .pagination__btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Skill Tags Tab */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            padding: 24px;
+        }
+        .skill-card {
+            background: var(--card);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .skill-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+        .skill-card__info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .skill-card__icon {
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-sm);
+            background: var(--primary-light);
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .skill-card__name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+        .skill-card__category {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .skill-card__count {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .empty-state__icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--border-light);
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+        }
+        .empty-state__title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        .empty-state__desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-in {
+            animation: fadeInUp 0.4s ease-out forwards;
+        }
+        .delay-1 { animation-delay: 0.05s; opacity: 0; }
+        .delay-2 { animation-delay: 0.1s; opacity: 0; }
+        .delay-3 { animation-delay: 0.15s; opacity: 0; }
+        .delay-4 { animation-delay: 0.2s; opacity: 0; }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .developers-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+        }
+        @media (max-width: 768px) {
+            .page-container { padding: 20px 16px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .filter-bar__row { flex-direction: column; }
+            .filter-bar__search { width: 100%; }
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+        }
+        .modal-overlay--visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--card);
+            border-radius: var(--radius-xl);
+            width: 100%;
+            max-width: 560px;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+            transform: scale(0.95);
+            transition: var(--transition);
+        }
+        .modal-overlay--visible .modal {
+            transform: scale(1);
+        }
+        .modal__header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal__title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .modal__close {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            transition: var(--transition);
+        }
+        .modal__close:hover {
+            background: var(--bg);
+            color: var(--text-primary);
+        }
+        .modal__body {
+            padding: 24px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .modal__footer {
+            padding: 20px 24px;
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        .form-label--required::after {
+            content: ' *';
+            color: var(--error);
+        }
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            transition: var(--transition);
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+        textarea.form-input {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        /* Drawer */
+        .drawer-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+        }
+        .drawer-overlay--visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            max-width: 600px;
+            background: var(--card);
+            box-shadow: var(--shadow-lg);
+            transform: translateX(100%);
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+        }
+        .drawer-overlay--visible .drawer {
+            transform: translateX(0);
+        }
+        .drawer__header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .drawer__title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .drawer__body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .drawer__tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: var(--bg);
+            padding: 4px;
+            border-radius: var(--radius-sm);
+        }
+        .drawer__tab {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .drawer__tab:hover {
+            color: var(--text-primary);
+        }
+        .drawer__tab--active {
+            background: var(--card);
+            color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Detail Sections */
+        .detail-section {
+            margin-bottom: 28px;
+        }
+        .detail-section__title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .detail-item {
+            padding: 14px;
+            background: var(--bg);
+            border-radius: var(--radius-sm);
+        }
+        .detail-item__label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-item__value {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 24px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 8px;
+            bottom: 8px;
+            width: 2px;
+            background: var(--border);
+        }
+        .timeline-item {
+            position: relative;
+            padding-bottom: 24px;
+        }
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+        .timeline-item__dot {
+            position: absolute;
+            left: -24px;
+            top: 4px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--primary);
+            border: 3px solid var(--card);
+            box-shadow: 0 0 0 2px var(--primary);
+        }
+        .timeline-item__dot--success { background: var(--success); box-shadow: 0 0 0 2px var(--success); }
+        .timeline-item__dot--warning { background: var(--warning); box-shadow: 0 0 0 2px var(--warning); }
+        .timeline-item__dot--error { background: var(--error); box-shadow: 0 0 0 2px var(--error); }
+        .timeline-item__date {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .timeline-item__title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .timeline-item__desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Evaluation Cards */
+        .eval-card {
+            background: var(--bg);
+            border-radius: var(--radius-md);
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+        .eval-card__header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .eval-card__evaluator {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .eval-card__score {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--success);
+        }
+        .eval-card__comment {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+        .eval-card__date {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <!-- Header -->
+        <div class="page-header animate-in">
+            <div class="page-header__left">
+                <h1>开发人员管理</h1>
+                <p>管理合作伙伴的开发人员资源，审核资质，追踪工作轨迹</p>
+            </div>
+            <div class="page-header__actions">
+                <button class="btn btn--secondary">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    批量导入
+                </button>
+                <button class="btn btn--secondary">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    下载模板
+                </button>
+                <button class="btn btn--primary" onclick="openCreateModal()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    新建开发人员
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs-container animate-in delay-1">
+            <div class="tabs-header">
+                <button class="tab-btn tab-btn--active" data-tab="list">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    开发人员列表
+                </button>
+                <button class="tab-btn" data-tab="skills">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+                    技能标签管理
+                </button>
+            </div>
+
+            <!-- List Tab Content -->
+            <div id="list-tab" class="tab-content">
+                <!-- Stats Grid -->
+                <div style="padding: 24px 24px 0;">
+                    <div class="stats-grid">
+                        <div class="stat-card stat-card--blue animate-in delay-1">
+                            <div class="stat-card__icon-wrap">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            </div>
+                            <div class="stat-card__value">128</div>
+                            <div class="stat-card__label">开发人员总数</div>
+                        </div>
+                        <div class="stat-card stat-card--warning animate-in delay-2">
+                            <div class="stat-card__icon-wrap">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </div>
+                            <div class="stat-card__value">12</div>
+                            <div class="stat-card__label">待审核</div>
+                        </div>
+                        <div class="stat-card stat-card--success animate-in delay-3">
+                            <div class="stat-card__icon-wrap">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </div>
+                            <div class="stat-card__value">108</div>
+                            <div class="stat-card__label">已通过</div>
+                        </div>
+                        <div class="stat-card stat-card--purple animate-in delay-4">
+                            <div class="stat-card__icon-wrap">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+                            </div>
+                            <div class="stat-card__value">45</div>
+                            <div class="stat-card__label">技能数量</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <div class="filter-bar__row">
+                        <div class="filter-bar__search">
+                            <svg class="filter-bar__search-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <input type="text" placeholder="搜索姓名、手机或邮箱..." />
+                        </div>
+                        <select class="filter-select">
+                            <option value="">全部技能</option>
+                            <option value="react">React</option>
+                            <option value="vue">Vue</option>
+                            <option value="java">Java</option>
+                            <option value="python">Python</option>
+                        </select>
+                        <select class="filter-select">
+                            <option value="">全部合作伙伴</option>
+                            <option value="1">华为技术有限公司</option>
+                            <option value="2">阿里巴巴集团</option>
+                            <option value="3">腾讯科技</option>
+                        </select>
+                        <select class="filter-select">
+                            <option value="">全部状态</option>
+                            <option value="PENDING">待审核</option>
+                            <option value="APPROVED">已通过</option>
+                            <option value="REJECTED">已拒绝</option>
+                            <option value="DISABLED">已禁用</option>
+                        </select>
+                        <button class="btn btn--primary">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            搜索
+                        </button>
+                    </div>
+                </div>
+
+                <!-- View Toggle & Results Info -->
+                <div style="padding: 0 24px 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 14px; color: var(--text-secondary);">共 <strong style="color: var(--text-primary);">128</strong> 条结果</span>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <span style="font-size: 13px; color: var(--text-muted);">视图：</span>
+                        <div class="view-toggle">
+                            <button class="view-toggle__btn view-toggle__btn--active" data-view="grid" title="网格视图">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                            </button>
+                            <button class="view-toggle__btn" data-view="table" title="表格视图">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Developer Cards Grid -->
+                <div id="grid-view" class="developers-grid" style="padding: 0 24px 24px;">
+                    <!-- Card 1 -->
+                    <div class="developer-card animate-in delay-1" onclick="openDrawer(1)">
+                        <div class="developer-card__header">
+                            <div class="developer-card__avatar">张</div>
+                            <div class="developer-card__info">
+                                <div class="developer-card__name">张明</div>
+                                <div class="developer-card__meta">138****8001 · zhangming@example.com</div>
+                                <span class="developer-card__badge badge--approved">
+                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                    已通过
+                                </span>
+                            </div>
+                        </div>
+                        <div class="developer-card__body">
+                            <div class="developer-card__skills">
+                                <span class="skill-tag">React</span>
+                                <span class="skill-tag">TypeScript</span>
+                                <span class="skill-tag">Node.js</span>
+                                <span class="skill-tag skill-tag--more">+5</span>
+                            </div>
+                            <div class="developer-card__stats">
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">5</div>
+                                    <div class="developer-card__stat-label">工作年限</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">12</div>
+                                    <div class="developer-card__stat-label">完成任务</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">92</div>
+                                    <div class="developer-card__stat-label">绩效评分</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="developer-card__footer">
+                            <span class="developer-card__date">注册于 2024-01-15</span>
+                            <div class="developer-card__actions" onclick="event.stopPropagation()">
+                                <button class="action-btn" title="查看详情">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                                <button class="action-btn" title="编辑">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="禁用">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card 2 -->
+                    <div class="developer-card animate-in delay-2" onclick="openDrawer(2)">
+                        <div class="developer-card__header">
+                            <div class="developer-card__avatar" style="background: linear-gradient(135deg, #22c55e 0%, #4ade80 100%);">李</div>
+                            <div class="developer-card__info">
+                                <div class="developer-card__name">李晓华</div>
+                                <div class="developer-card__meta">139****8002 · lixiaohua@example.com</div>
+                                <span class="developer-card__badge badge--pending">
+                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    待审核
+                                </span>
+                            </div>
+                        </div>
+                        <div class="developer-card__body">
+                            <div class="developer-card__skills">
+                                <span class="skill-tag">Vue</span>
+                                <span class="skill-tag">Java</span>
+                                <span class="skill-tag skill-tag--more">+2</span>
+                            </div>
+                            <div class="developer-card__stats">
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">3</div>
+                                    <div class="developer-card__stat-label">工作年限</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">5</div>
+                                    <div class="developer-card__stat-label">完成任务</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">--</div>
+                                    <div class="developer-card__stat-label">绩效评分</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="developer-card__footer">
+                            <span class="developer-card__date">注册于 2024-03-20</span>
+                            <div class="developer-card__actions" onclick="event.stopPropagation()">
+                                <button class="action-btn" title="查看详情">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                                <button class="btn btn--success" style="padding: 6px 12px; font-size: 12px;">通过</button>
+                                <button class="btn btn--danger" style="padding: 6px 12px; font-size: 12px;">拒绝</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card 3 -->
+                    <div class="developer-card animate-in delay-3" onclick="openDrawer(3)">
+                        <div class="developer-card__header">
+                            <div class="developer-card__avatar" style="background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);">王</div>
+                            <div class="developer-card__info">
+                                <div class="developer-card__name">王建国</div>
+                                <div class="developer-card__meta">136****8003 · wangjianguo@example.com</div>
+                                <span class="developer-card__badge badge--approved">
+                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                    已通过
+                                </span>
+                            </div>
+                        </div>
+                        <div class="developer-card__body">
+                            <div class="developer-card__skills">
+                                <span class="skill-tag">Python</span>
+                                <span class="skill-tag">Django</span>
+                                <span class="skill-tag">PostgreSQL</span>
+                                <span class="skill-tag skill-tag--more">+3</span>
+                            </div>
+                            <div class="developer-card__stats">
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">8</div>
+                                    <div class="developer-card__stat-label">工作年限</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">25</div>
+                                    <div class="developer-card__stat-label">完成任务</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">95</div>
+                                    <div class="developer-card__stat-label">绩效评分</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="developer-card__footer">
+                            <span class="developer-card__date">注册于 2023-06-10</span>
+                            <div class="developer-card__actions" onclick="event.stopPropagation()">
+                                <button class="action-btn" title="查看详情">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                                <button class="action-btn" title="编辑">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="禁用">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card 4 -->
+                    <div class="developer-card animate-in delay-4" onclick="openDrawer(4)">
+                        <div class="developer-card__header">
+                            <div class="developer-card__avatar" style="background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);">陈</div>
+                            <div class="developer-card__info">
+                                <div class="developer-card__name">陈思思</div>
+                                <div class="developer-card__meta">137****8004 · chensisi@example.com</div>
+                                <span class="developer-card__badge badge--rejected">
+                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    已拒绝
+                                </span>
+                            </div>
+                        </div>
+                        <div class="developer-card__body">
+                            <div class="developer-card__skills">
+                                <span class="skill-tag">Go</span>
+                                <span class="skill-tag">Kubernetes</span>
+                            </div>
+                            <div class="developer-card__stats">
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">4</div>
+                                    <div class="developer-card__stat-label">工作年限</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">0</div>
+                                    <div class="developer-card__stat-label">完成任务</div>
+                                </div>
+                                <div class="developer-card__stat">
+                                    <div class="developer-card__stat-value">--</div>
+                                    <div class="developer-card__stat-label">绩效评分</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="developer-card__footer">
+                            <span class="developer-card__date">注册于 2024-02-28</span>
+                            <div class="developer-card__actions" onclick="event.stopPropagation()">
+                                <button class="action-btn" title="查看详情">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                                <button class="action-btn" title="编辑">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="删除">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table View (Hidden by default) -->
+                <div id="table-view" class="table-container" style="padding: 0 24px 24px; display: none;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>姓名</th>
+                                <th>联系方式</th>
+                                <th>合作伙伴</th>
+                                <th>技能</th>
+                                <th>工作年限</th>
+                                <th>状态</th>
+                                <th>注册时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>张明</strong></td>
+                                <td>138****8001</td>
+                                <td>华为技术有限公司</td>
+                                <td>
+                                    <div class="data-table__skills">
+                                        <span class="skill-tag">React</span>
+                                        <span class="skill-tag">TypeScript</span>
+                                    </div>
+                                </td>
+                                <td>5年</td>
+                                <td><span class="developer-card__badge badge--approved">已通过</span></td>
+                                <td>2024-01-15</td>
+                                <td>
+                                    <div class="developer-card__actions" style="justify-content: flex-start;">
+                                        <button class="action-btn" title="查看">
+                                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                        </button>
+                                        <button class="action-btn" title="编辑">
+                                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        </button>
+                                        <button class="action-btn action-btn--danger" title="删除">
+                                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>李晓华</strong></td>
+                                <td>139****8002</td>
+                                <td>阿里巴巴集团</td>
+                                <td>
+                                    <div class="data-table__skills">
+                                        <span class="skill-tag">Vue</span>
+                                        <span class="skill-tag">Java</span>
+                                    </div>
+                                </td>
+                                <td>3年</td>
+                                <td><span class="developer-card__badge badge--pending">待审核</span></td>
+                                <td>2024-03-20</td>
+                                <td>
+                                    <div class="developer-card__actions" style="justify-content: flex-start;">
+                                        <button class="btn btn--success" style="padding: 4px 10px; font-size: 11px;">通过</button>
+                                        <button class="btn btn--danger" style="padding: 4px 10px; font-size: 11px;">拒绝</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <div class="pagination__info">
+                        显示 1-8 条，共 128 条
+                    </div>
+                    <div class="pagination__controls">
+                        <button class="pagination__btn" disabled>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <button class="pagination__btn pagination__btn--active">1</button>
+                        <button class="pagination__btn">2</button>
+                        <button class="pagination__btn">3</button>
+                        <span style="padding: 0 8px; color: var(--text-muted);">...</span>
+                        <button class="pagination__btn">16</button>
+                        <button class="pagination__btn">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Skills Tab Content -->
+            <div id="skills-tab" class="tab-content" style="display: none;">
+                <div style="padding: 24px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 14px; color: var(--text-secondary);">共 <strong style="color: var(--text-primary);">45</strong> 个技能标签</span>
+                    <button class="btn btn--primary">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        新建技能标签
+                    </button>
+                </div>
+                <div class="skills-grid">
+                    <div class="skill-card">
+                        <div class="skill-card__info">
+                            <div class="skill-card__icon">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                            </div>
+                            <div>
+                                <div class="skill-card__name">React</div>
+                                <div class="skill-card__category">前端技术</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="skill-card__count">28</span>
+                            <div class="developer-card__actions">
+                                <button class="action-btn" title="编辑">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="删除">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="skill-card">
+                        <div class="skill-card__info">
+                            <div class="skill-card__icon" style="background: var(--success-light); color: var(--success);">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                            </div>
+                            <div>
+                                <div class="skill-card__name">Vue</div>
+                                <div class="skill-card__category">前端技术</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="skill-card__count">22</span>
+                            <div class="developer-card__actions">
+                                <button class="action-btn" title="编辑">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="删除">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="skill-card">
+                        <div class="skill-card__info">
+                            <div class="skill-card__icon" style="background: var(--warning-light); color: var(--warning);">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                            </div>
+                            <div>
+                                <div class="skill-card__name">Java</div>
+                                <div class="skill-card__category">后端技术</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="skill-card__count">35</span>
+                            <div class="developer-card__actions">
+                                <button class="action-btn" title="编辑">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="删除">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="skill-card">
+                        <div class="skill-card__info">
+                            <div class="skill-card__icon" style="background: var(--purple-light); color: var(--purple);">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                            </div>
+                            <div>
+                                <div class="skill-card__name">Python</div>
+                                <div class="skill-card__category">后端技术</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="skill-card__count">30</span>
+                            <div class="developer-card__actions">
+                                <button class="action-btn" title="编辑">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button class="action-btn action-btn--danger" title="删除">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div id="create-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal__header">
+                <h2 class="modal__title">新建开发人员</h2>
+                <button class="modal__close" onclick="closeModal()">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="modal__body">
+                <div class="form-group">
+                    <label class="form-label form-label--required">姓名</label>
+                    <input type="text" class="form-input" placeholder="请输入开发人员姓名" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label form-label--required">手机号码</label>
+                    <input type="tel" class="form-input" placeholder="请输入手机号码" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮箱</label>
+                    <input type="email" class="form-input" placeholder="请输入邮箱地址" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label form-label--required">所属合作伙伴</label>
+                    <select class="form-input">
+                        <option value="">请选择合作伙伴</option>
+                        <option value="1">华为技术有限公司</option>
+                        <option value="2">阿里巴巴集团</option>
+                        <option value="3">腾讯科技</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">工作年限</label>
+                    <input type="number" class="form-input" placeholder="请输入工作年限" min="0" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">技能标签</label>
+                    <select class="form-input" multiple style="min-height: 100px;">
+                        <option value="react">React</option>
+                        <option value="vue">Vue</option>
+                        <option value="java">Java</option>
+                        <option value="python">Python</option>
+                        <option value="go">Go</option>
+                    </select>
+                    <small style="color: var(--text-muted); margin-top: 4px; display: block;">按住 Ctrl/Cmd 多选</small>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn--primary">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Drawer -->
+    <div id="drawer-overlay" class="drawer-overlay" onclick="closeDrawer()">
+        <div class="drawer" onclick="event.stopPropagation()">
+            <div class="drawer__header">
+                <h2 class="drawer__title">开发人员详情</h2>
+                <button class="modal__close" onclick="closeDrawer()">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="drawer__body">
+                <!-- Tabs -->
+                <div class="drawer__tabs">
+                    <button class="drawer__tab drawer__tab--active" data-drawer-tab="basic">基本信息</button>
+                    <button class="drawer__tab" data-drawer-tab="trajectory">工作轨迹</button>
+                    <button class="drawer__tab" data-drawer-tab="evaluations">绩效评估</button>
+                </div>
+
+                <!-- Basic Info Tab -->
+                <div id="drawer-basic" class="drawer-tab-content">
+                    <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 28px;">
+                        <div class="developer-card__avatar" style="width: 72px; height: 72px; font-size: 28px;">张</div>
+                        <div>
+                            <h3 style="font-size: 20px; font-weight: 600; margin-bottom: 4px;">张明</h3>
+                            <span class="developer-card__badge badge--approved">
+                                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                已通过
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4 class="detail-section__title">基本信息</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <div class="detail-item__label">手机号码</div>
+                                <div class="detail-item__value">138****8001</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-item__label">邮箱</div>
+                                <div class="detail-item__value">zhangming@example.com</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-item__label">所属合作伙伴</div>
+                                <div class="detail-item__value">华为技术有限公司</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-item__label">工作年限</div>
+                                <div class="detail-item__value">5年</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-item__label">注册时间</div>
+                                <div class="detail-item__value">2024-01-15 10:30</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-item__label">更新时间</div>
+                                <div class="detail-item__value">2024-03-20 14:22</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4 class="detail-section__title">技能标签</h4>
+                        <div class="developer-card__skills">
+                            <span class="skill-tag">React</span>
+                            <span class="skill-tag">TypeScript</span>
+                            <span class="skill-tag">Node.js</span>
+                            <span class="skill-tag">Vue</span>
+                            <span class="skill-tag">PostgreSQL</span>
+                            <span class="skill-tag">Docker</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 24px;">
+                        <button class="btn btn--primary">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            编辑信息
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Trajectory Tab -->
+                <div id="drawer-trajectory" class="drawer-tab-content" style="display: none;">
+                    <div class="timeline">
+                        <div class="timeline-item">
+                            <div class="timeline-item__dot timeline-item__dot--success"></div>
+                            <div class="timeline-item__date">2024-04-15</div>
+                            <div class="timeline-item__title">项目完成</div>
+                            <div class="timeline-item__desc">完成订单模块开发任务，获得客户好评</div>
+                        </div>
+                        <div class="timeline-item">
+                            <div class="timeline-item__dot"></div>
+                            <div class="timeline-item__date">2024-03-20</div>
+                            <div class="timeline-item__title">绩效评估</div>
+                            <div class="timeline-item__desc">Q1季度绩效评估，综合评价：优秀 (92分)</div>
+                        </div>
+                        <div class="timeline-item">
+                            <div class="timeline-item__dot timeline-item__dot--success"></div>
+                            <div class="timeline-item__date">2024-02-01</div>
+                            <div class="timeline-item__title">任务分配</div>
+                            <div class="timeline-item__desc">参与电商平台订单模块开发</div>
+                        </div>
+                        <div class="timeline-item">
+                            <div class="timeline-item__dot timeline-item__dot--warning"></div>
+                            <div class="timeline-item__date">2024-01-15</div>
+                            <div class="timeline-item__title">审核通过</div>
+                            <div class="timeline-item__desc">完成资质审核，审核结果：通过</div>
+                        </div>
+                        <div class="timeline-item">
+                            <div class="timeline-item__dot timeline-item__dot--success"></div>
+                            <div class="timeline-item__date">2024-01-10</div>
+                            <div class="timeline-item__title">注册加入</div>
+                            <div class="timeline-item__desc">开发人员正式注册加入平台</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Evaluations Tab -->
+                <div id="drawer-evaluations" class="drawer-tab-content" style="display: none;">
+                    <div class="eval-card">
+                        <div class="eval-card__header">
+                            <span class="eval-card__evaluator">项目负责人A</span>
+                            <span class="eval-card__score">92分</span>
+                        </div>
+                        <div class="eval-card__comment">技术能力强，代码质量高，按时交付，表现优异。具有良好的团队协作精神和沟通能力。</div>
+                        <div class="eval-card__date">2024-03-20</div>
+                    </div>
+                    <div class="eval-card">
+                        <div class="eval-card__header">
+                            <span class="eval-card__evaluator">项目经理B</span>
+                            <span class="eval-card__score" style="color: var(--primary);">88分</span>
+                        </div>
+                        <div class="eval-card__comment">沟通协作顺畅，主动承担责任，值得信赖。能够独立解决技术难题。</div>
+                        <div class="eval-card__date">2024-01-15</div>
+                    </div>
+                    <div class="eval-card">
+                        <div class="eval-card__header">
+                            <span class="eval-card__evaluator">技术负责人C</span>
+                            <span class="eval-card__score">95分</span>
+                        </div>
+                        <div class="eval-card__comment">架构设计思路清晰，技术方案优秀，是团队核心成员。对新技术有强烈的学习热情。</div>
+                        <div class="eval-card__date">2023-12-01</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-btn--active'));
+                this.classList.add('tab-btn--active');
+
+                const tabId = this.dataset.tab;
+                document.getElementById('list-tab').style.display = tabId === 'list' ? 'block' : 'none';
+                document.getElementById('skills-tab').style.display = tabId === 'skills' ? 'block' : 'none';
+            });
+        });
+
+        // View toggle
+        document.querySelectorAll('.view-toggle__btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.view-toggle__btn').forEach(b => b.classList.remove('view-toggle__btn--active'));
+                this.classList.add('view-toggle__btn--active');
+
+                const view = this.dataset.view;
+                document.getElementById('grid-view').style.display = view === 'grid' ? 'grid' : 'none';
+                document.getElementById('table-view').style.display = view === 'table' ? 'block' : 'none';
+            });
+        });
+
+        // Drawer tabs
+        document.querySelectorAll('.drawer__tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.drawer__tab').forEach(t => t.classList.remove('drawer__tab--active'));
+                this.classList.add('drawer__tab--active');
+
+                const tabId = this.dataset.drawerTab;
+                document.querySelectorAll('.drawer-tab-content').forEach(c => c.style.display = 'none');
+                document.getElementById('drawer-' + tabId).style.display = 'block';
+            });
+        });
+
+        // Modal functions
+        function openCreateModal() {
+            document.getElementById('create-modal').classList.add('modal-overlay--visible');
+        }
+        function closeModal() {
+            document.getElementById('create-modal').classList.remove('modal-overlay--visible');
+        }
+
+        // Drawer functions
+        function openDrawer(id) {
+            document.getElementById('drawer-overlay').classList.add('drawer-overlay--visible');
+            // Reset to first tab
+            document.querySelectorAll('.drawer__tab').forEach(t => t.classList.remove('drawer__tab--active'));
+            document.querySelector('.drawer__tab').classList.add('drawer__tab--active');
+            document.querySelectorAll('.drawer-tab-content').forEach(c => c.style.display = 'none');
+            document.getElementById('drawer-basic').style.display = 'block';
+        }
+        function closeDrawer() {
+            document.getElementById('drawer-overlay').classList.remove('drawer-overlay--visible');
+        }
+
+        // Close modal on escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeDrawer();
+            }
+        });
+    </script>
+</body>
+</html>

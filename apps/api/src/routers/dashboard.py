@@ -33,9 +33,10 @@ async def get_dashboard_stats():
         },
         'risks': {
             'total': risks_total,
-            'high': risks_total,
-            'medium': 0,
-            'low': 0,
+            'high': await db.riskentry.count(where={"level": "HIGH"}),
+            'medium': await db.riskentry.count(where={"level": "MEDIUM"}),
+            'low': await db.riskentry.count(where={"level": "LOW"}),
+            'pending': await db.riskentry.count(where={"status": "OPEN"}),
         },
         'partners': {
             'total': partners,

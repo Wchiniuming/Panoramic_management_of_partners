@@ -225,10 +225,10 @@ const Dashboard: React.FC = () => {
         delayed: [2, 3, 1, 4, 3, 2, 5],
       })
 
-      const excellentCount = assessments.filter((a: any) => a.totalScore >= 90).length
-      const goodCount = assessments.filter((a: any) => a.totalScore >= 75 && a.totalScore < 90).length
-      const qualifiedCount = assessments.filter((a: any) => a.totalScore >= 60 && a.totalScore < 75).length
-      const needsWorkCount = assessments.filter((a: any) => a.totalScore < 60).length
+      const excellentCount = assessments.filter((a: any) => a.total_score >= 90).length
+      const goodCount = assessments.filter((a: any) => a.total_score >= 75 && a.total_score < 90).length
+      const qualifiedCount = assessments.filter((a: any) => a.total_score >= 60 && a.total_score < 75).length
+      const needsWorkCount = assessments.filter((a: any) => a.total_score < 60).length
 
       setAssessmentData({
         labels: ['优秀', '良好', '合格', '待改进'],
@@ -321,14 +321,6 @@ const Dashboard: React.FC = () => {
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em', marginBottom: 4 }}>仪表盘</h1>
           <p style={{ fontSize: 14, color: '#64748b' }}>欢迎回来，这里是您的数据概览</p>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => window.location.reload()} style={{ padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #e2e8f0', color: '#0f172a' }}>
-            <span>🔄</span> 刷新
-          </button>
-          <button style={{ padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: '#1890ff', border: 'none', color: 'white' }}>
-            <span>📥</span> 导出
-          </button>
         </div>
       </div>
 
@@ -438,87 +430,6 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={8}>
-          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 16 }}>快捷操作</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div onClick={() => navigate('/developers')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(24,144,255,0.08)', color: '#1890ff' }}>
-                  <UserAddOutlined />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>新增开发人员</span>
-              </div>
-              <div onClick={() => navigate('/tasks')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-                  <FormOutlined />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>创建任务</span>
-              </div>
-              <div onClick={() => navigate('/assessment')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
-                  <AuditOutlined />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>发起评估</span>
-              </div>
-              <div onClick={() => navigate('/risks')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
-                  <WarningOutlined />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>添加风险项</span>
-              </div>
-            </div>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={8}>
-          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>进行中的任务</div>
-              <a onClick={() => navigate('/tasks')} style={{ fontSize: 13, color: '#1890ff', textDecoration: 'none', cursor: 'pointer' }}>查看全部</a>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {recentTasks.map(task => (
-                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid transparent', transition: '200ms' }}>
-                  <div style={{ width: 20, height: 20, borderRadius: 6, border: '2px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', background: task.status === 'completed' ? '#22c55e' : 'transparent', borderColor: task.status === 'completed' ? '#22c55e' : '#e2e8f0', color: 'white' }}>
-                    {task.status === 'completed' && <CheckCircleOutlined style={{ fontSize: 12 }} />}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: task.status === 'completed' ? '#94a3b8' : '#0f172a', textDecoration: task.status === 'completed' ? 'line-through' : 'none' }}>{task.title}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>负责人：{task.assignee} {task.deadline ? `· 截止：${task.deadline}` : '· 已完成'}</div>
-                  </div>
-                  {getStatusBadge(task.status === 'pending' ? 'urgent' : task.status === 'delayed' ? 'delayed' : 'normal')}
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={8}>
-          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>合作伙伴评估</div>
-              <a onClick={() => navigate('/assessment')} style={{ fontSize: 13, color: '#1890ff', textDecoration: 'none', cursor: 'pointer' }}>查看全部</a>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {partners.map((partner, idx) => (
-                <div key={partner.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 12, background: '#f8fafc', borderRadius: 10, transition: '200ms', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 8, background: idx === 0 ? 'linear-gradient(135deg, #1890ff 0%, #36c1fc 100%)' : idx === 1 ? 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)' : 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{partner.name[0]}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}><span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', marginRight: 6, background: partner.status === 'online' ? '#22c55e' : partner.status === 'busy' ? '#f59e0b' : '#94a3b8' }} />{partner.name}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8' }}>{partner.type}</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                    <span style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{partner.score}</span>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>评估得分</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
       <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 24 }} styles={{ body: { padding: 24 } }}>
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>风险概览</div>
@@ -600,6 +511,87 @@ const Dashboard: React.FC = () => {
           </Col>
         </Row>
       </Card>
+
+      <Row gutter={[20, 20]} style={{ marginTop: 24 }}>
+        <Col xs={24} lg={8}>
+          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>合作伙伴评估</div>
+              <a onClick={() => navigate('/assessment')} style={{ fontSize: 13, color: '#1890ff', textDecoration: 'none', cursor: 'pointer' }}>查看全部</a>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {partners.map((partner, idx) => (
+                <div key={partner.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 12, background: '#f8fafc', borderRadius: 10, transition: '200ms', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: idx === 0 ? 'linear-gradient(135deg, #1890ff 0%, #36c1fc 100%)' : idx === 1 ? 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)' : 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{partner.name[0]}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}><span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', marginRight: 6, background: partner.status === 'online' ? '#22c55e' : partner.status === 'busy' ? '#f59e0b' : '#94a3b8' }} />{partner.name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>{partner.type}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{partner.score}</span>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>评估得分</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={8}>
+          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>进行中的任务</div>
+              <a onClick={() => navigate('/tasks')} style={{ fontSize: 13, color: '#1890ff', textDecoration: 'none', cursor: 'pointer' }}>查看全部</a>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {recentTasks.map(task => (
+                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid transparent', transition: '200ms' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: '2px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', background: task.status === 'completed' ? '#22c55e' : 'transparent', borderColor: task.status === 'completed' ? '#22c55e' : '#e2e8f0', color: 'white' }}>
+                    {task.status === 'completed' && <CheckCircleOutlined style={{ fontSize: 12 }} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: task.status === 'completed' ? '#94a3b8' : '#0f172a', textDecoration: task.status === 'completed' ? 'line-through' : 'none' }}>{task.title}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>负责人：{task.assignee} {task.deadline ? `· 截止：${task.deadline}` : '· 已完成'}</div>
+                  </div>
+                  {getStatusBadge(task.status === 'pending' ? 'urgent' : task.status === 'delayed' ? 'delayed' : 'normal')}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={8}>
+          <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 24 } }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 16 }}>快捷操作</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div onClick={() => navigate('/developers')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(24,144,255,0.08)', color: '#1890ff' }}>
+                  <UserAddOutlined />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>新增开发人员</span>
+              </div>
+              <div onClick={() => navigate('/tasks')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                  <FormOutlined />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>创建任务</span>
+              </div>
+              <div onClick={() => navigate('/assessment')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
+                  <AuditOutlined />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>发起评估</span>
+              </div>
+              <div onClick={() => navigate('/risks')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', transition: '200ms' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                  <WarningOutlined />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>添加风险项</span>
+              </div>
+            </div>
+          </Card>
+        </Col>
+      </Row>
     </div>
   )
 }

@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useDebounceSearch } from '@/hooks/useDebounceSearch'
+import apiClient from '@/api/axios'
 import {
   Card,
   Table,
@@ -24,6 +26,7 @@ import {
   Popconfirm,
   Progress,
   Tooltip,
+  ConfigProvider,
 } from 'antd'
 import {
   PlusOutlined,
@@ -40,11 +43,11 @@ import {
   WarningOutlined,
   SendOutlined,
   CheckOutlined,
+  EditOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload/interface'
 import dayjs from 'dayjs'
-import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 
 const { TabPane } = Tabs
@@ -116,6 +119,8 @@ const PRIORITY_MAP: Record<Priority, { color: string; text: string }> = {
   HIGH: { color: 'warning', text: '高' },
   URGENT: { color: 'error', text: '紧急' },
 }
+const PRIORITY_SORT: Record<Priority, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 }
+const STATUS_SORT: Record<TaskStatus, number> = { DRAFT: 1, PENDING_AUDIT: 2, ASSIGNED: 3, IN_PROGRESS: 4, DELIVERED: 5, COMPLETED: 6, REJECTED: 7, ARCHIVED: 8 }
 
 const STATUS_MAP: Record<TaskStatus, { color: string; text: string }> = {
   DRAFT: { color: 'default', text: '草稿' },
@@ -128,64 +133,12 @@ const STATUS_MAP: Record<TaskStatus, { color: string; text: string }> = {
   ARCHIVED: { color: 'default', text: '已归档' },
 }
 
-const TASK_TYPES = [
-  { value: 'development', label: '开发' },
-  { value: 'testing', label: '测试' },
-  { value: 'design', label: '设计' },
-  { value: 'maintenance', label: '运维' },
-]
-
-const mockPartners = [
-  { id: 1, name: '华为技术有限公司' },
-  { id: 2, name: '中兴通讯股份有限公司' },
-  { id: 3, name: '烽火通信科技股份有限公司' },
-  { id: 4, name: '中国信科集团' },
-]
-
-const mockDevelopers = [
-  { id: 1, name: '张伟', skill: 'Java' },
-  { id: 2, name: '李娜', skill: 'Python' },
-  { id: 3, name: '王强', skill: '前端' },
-  { id: 4, name: '刘洋', skill: 'Go' },
-]
-
-const mockTasks: Task[] = [
-  { id: 1, name: 'BOSS系统接口优化', partner_id: 1, partner_name: '华为技术有限公司', type: 'development', description: '对BOSS系统接口进行性能优化，提升响应速度', priority: 'HIGH', status: 'IN_PROGRESS', start_date: '2024-01-15', end_date: '2024-03-15', budget: 50000, progress: 65, created_at: '2024-01-10', developer_id: 1, developer_name: '张伟' },
-  { id: 2, name: 'CRM客户管理模块开发', partner_id: 2, partner_name: '中兴通讯股份有限公司', type: 'development', description: '开发CRM系统的客户管理模块', priority: 'MEDIUM', status: 'ASSIGNED', start_date: '2024-02-01', end_date: '2024-04-30', budget: 80000, progress: 20, created_at: '2024-01-28', developer_id: 3, developer_name: '王强' },
-  { id: 3, name: '数据中台架构设计', partner_id: 1, partner_name: '华为技术有限公司', type: 'design', description: '设计企业级数据中台架构方案', priority: 'URGENT', status: 'PENDING_AUDIT', start_date: '2024-02-10', end_date: '2024-03-10', budget: 30000, progress: 0, created_at: '2024-02-05' },
-  { id: 4, name: '运维自动化平台测试', partner_id: 3, partner_name: '烽火通信科技股份有限公司', type: 'testing', description: '对运维自动化平台进行功能测试和性能测试', priority: 'LOW', status: 'COMPLETED', start_date: '2023-12-01', end_date: '2024-01-31', budget: 20000, progress: 100, created_at: '2023-11-25', developer_id: 2, developer_name: '李娜' },
-  { id: 5, name: '移动端APP接口开发', partner_id: 4, partner_name: '中国信科集团', type: 'development', description: '开发移动端APP所需的后端接口服务', priority: 'HIGH', status: 'DELIVERED', start_date: '2024-01-05', end_date: '2024-02-28', budget: 60000, progress: 100, created_at: '2024-01-02', developer_id: 4, developer_name: '刘洋' },
-  { id: 6, name: 'BI报表系统升级', partner_id: 2, partner_name: '中兴通讯股份有限公司', type: 'development', description: '升级BI报表系统至最新版本', priority: 'MEDIUM', status: 'IN_PROGRESS', start_date: '2024-02-15', end_date: '2024-04-15', budget: 45000, progress: 35, created_at: '2024-02-10', developer_id: 1, developer_name: '张伟' },
-  { id: 7, name: '安全审计模块开发', partner_id: 1, partner_name: '华为技术有限公司', type: 'development', priority: 'HIGH', status: 'DRAFT', start_date: '2024-03-01', end_date: '2024-05-31', budget: 70000, progress: 0, created_at: '2024-02-20' },
-  { id: 8, name: 'API网关性能测试', partner_id: 3, partner_name: '烽火通信科技股份有限公司', type: 'testing', priority: 'LOW', status: 'ARCHIVED', start_date: '2023-10-01', end_date: '2023-11-30', budget: 15000, progress: 100, created_at: '2023-09-25' },
-]
-
-const mockProgress: Record<number, ProgressRecord[]> = {
-  1: [
-    { id: 1, task_id: 1, content: '完成接口梳理与优化方案制定', progress: 20, created_at: '2024-01-20 10:00', creator_name: '张伟' },
-    { id: 2, task_id: 1, content: '完成核心接口优化开发', progress: 45, created_at: '2024-02-10 15:30', creator_name: '张伟' },
-    { id: 3, task_id: 1, content: '接口联调与性能测试', progress: 65, created_at: '2024-02-25 09:00', creator_name: '张伟' },
-  ],
-  2: [{ id: 4, task_id: 2, content: '完成需求分析与设计', progress: 20, created_at: '2024-02-05 14:00', creator_name: '王强' }],
-}
-
-const mockDeliverables: Record<number, Deliverable[]> = {
-  1: [
-    { id: 1, task_id: 1, name: '接口优化方案.docx', file_url: '/files/doc1.docx', file_size: 2048000, uploaded_at: '2024-01-18 10:00', uploaded_by: '张伟' },
-    { id: 2, task_id: 1, name: '优化代码包.zip', file_url: '/files/code1.zip', file_size: 5242880, uploaded_at: '2024-02-08 16:00', uploaded_by: '张伟' },
-  ],
-  5: [{ id: 3, task_id: 5, name: '移动端接口文档.pdf', file_url: '/files/api.pdf', file_size: 3145728, uploaded_at: '2024-02-25 11:00', uploaded_by: '刘洋' }],
-}
-
-const mockAssignments: Record<number, Assignment[]> = {
-  1: [{ id: 1, task_id: 1, developer_id: 1, developer_name: '张伟', role: '主开发', assigned_at: '2024-01-15 09:00', status: 'ACCEPTED' }],
-  2: [{ id: 2, task_id: 2, developer_id: 3, developer_name: '王强', role: '主开发', assigned_at: '2024-02-01 10:00', status: 'ACCEPTED' }],
-  3: [{ id: 3, task_id: 3, developer_id: 0, developer_name: '待分配', role: '主开发', assigned_at: '', status: 'PENDING' }],
-}
-
 const TaskRegistration: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>(mockTasks)
+  const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
+  const [partners, setPartners] = useState<{id: number, name: string}[]>([])
+  const [developers, setDevelopers] = useState<{id: number, name: string}[]>([])
+  const [taskTypes, setTaskTypes] = useState<{value: string, label: string}[]>([{ value: 'development', label: '开发' }, { value: 'testing', label: '测试' }, { value: 'design', label: '设计' }, { value: 'maintenance', label: '运维' }, { value: 'deployment', label: '部署' }])
   const [filters, setFilters] = useState({
     name: '',
     status: '' as TaskStatus | '',
@@ -193,10 +146,13 @@ const TaskRegistration: React.FC = () => {
     partner_id: undefined as number | undefined,
     dateRange: undefined as [dayjs.Dayjs, dayjs.Dayjs] | undefined,
   })
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
   const [createModalVisible, setCreateModalVisible] = useState(false)
   const [detailVisible, setDetailVisible] = useState(false)
   const [delayModalVisible, setDelayModalVisible] = useState(false)
   const [assignModalVisible, setAssignModalVisible] = useState(false)
+  const [editModalVisible, setEditModalVisible] = useState(false)
   const [progressModalVisible, setProgressModalVisible] = useState(false)
   const [deliverableModalVisible, setDeliverableModalVisible] = useState(false)
   const [acceptModalVisible, setAcceptModalVisible] = useState(false)
@@ -206,6 +162,7 @@ const TaskRegistration: React.FC = () => {
   const [deliverables, setDeliverables] = useState<Deliverable[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [form] = Form.useForm()
+  const [editForm] = Form.useForm()
   const [delayForm] = Form.useForm()
   const [assignForm] = Form.useForm()
   const [progressForm] = Form.useForm()
@@ -220,134 +177,184 @@ const TaskRegistration: React.FC = () => {
   const delayedTasks = tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'ARCHIVED' && dayjs(t.end_date).isBefore(dayjs())).length
   const delayRate = totalTasks > 0 ? Math.round((delayedTasks / totalTasks) * 100) : 0
 
-  const partnerStats = mockPartners.map((p) => {
+  const partnerStats = partners.map((p) => {
     const pt = tasks.filter((t) => t.partner_id === p.id)
     const completed = pt.filter((t) => t.status === 'COMPLETED').length
     return { name: p.name, total: pt.length, completed, rate: pt.length > 0 ? Math.round((completed / pt.length) * 100) : 0 }
   })
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (filterOverride?: typeof filters) => {
     setLoading(true)
     try {
+      const f = filterOverride ?? filtersRef.current
       const params = new URLSearchParams()
-      if (filters.name) params.append('name', filters.name)
-      if (filters.status) params.append('status', filters.status)
-      if (filters.priority) params.append('priority', filters.priority)
-      if (filters.partner_id) params.append('partner_id', String(filters.partner_id))
-      if (filters.dateRange) {
-        params.append('start_date', filters.dateRange[0].format('YYYY-MM-DD'))
-        params.append('end_date', filters.dateRange[1].format('YYYY-MM-DD'))
-      }
-      setTasks(mockTasks.filter((t) => {
-        if (filters.name && !t.name.includes(filters.name)) return false
-        if (filters.status && t.status !== filters.status) return false
-        if (filters.priority && t.priority !== filters.priority) return false
-        if (filters.partner_id && t.partner_id !== filters.partner_id) return false
-        if (filters.dateRange) {
-          const start = dayjs(t.start_date)
-          if (start.isBefore(filters.dateRange[0]) || start.isAfter(filters.dateRange[1])) return false
-        }
-        return true
-      }))
+      if (f.name) params.append('name', f.name)
+      if (f.status) params.append('status', f.status)
+      if (f.priority) params.append('priority', f.priority)
+      if (f.partner_id) params.append('partner_id', String(f.partner_id))
+      const res = await apiClient.get(`/tasks?${params.toString()}`)
+      setTasks(res.data || [])
     } catch { message.error('获取任务列表失败') } finally { setLoading(false) }
-  }, [filters])
+  }, [])
 
-  useEffect(() => { fetchTasks() }, [fetchTasks])
+  const { debouncedSearch: debouncedSearchTasks, immediateSearch: immediateSearchTasks } = useDebounceSearch(fetchTasks, 300)
+
+  useEffect(() => {
+    fetchTasks()
+    apiClient.get('/partners').then(res => { if (Array.isArray(res.data)) setPartners(res.data) }).catch(() => {})
+    apiClient.get('/developers?limit=100').then(res => {
+      const data = res.data
+      if (Array.isArray(data)) setDevelopers(data.map((d: any) => ({ id: d.id, name: d.name })))
+      else if (data.items) setDevelopers(data.items.map((d: any) => ({ id: d.id, name: d.name })))
+    }).catch(() => {})
+    apiClient.get('/tasks/types').then(res => {
+      if (Array.isArray(res.data) && res.data.length > 0) setTaskTypes(res.data)
+    }).catch(() => {})
+  }, [])
 
   const handleCreate = () => { form.resetFields(); setUploadFileList([]); setCreateModalVisible(true) }
+  const handleEdit = (task: Task) => {
+    editForm.setFieldsValue({
+      name: task.name,
+      description: task.description,
+      type: task.type,
+      priority: task.priority,
+      budget: task.budget,
+      start_date: task.start_date ? dayjs(task.start_date) : null,
+      end_date: task.end_date ? dayjs(task.end_date) : null,
+      delivery_standard: task.delivery_standard,
+    })
+    setSelectedTask(task)
+    setEditModalVisible(true)
+  }
+  const handleEditSubmit = async () => {
+    try {
+      const values = await editForm.validateFields()
+      await apiClient.put(`/tasks/${selectedTask!.id}`, {
+        name: values.name,
+        description: values.description,
+        type: values.type,
+        priority: values.priority || 'MEDIUM',
+        budget: values.budget,
+        start_date: values.start_date?.format('YYYY-MM-DD'),
+        end_date: values.end_date?.format('YYYY-MM-DD'),
+        delivery_standard: values.delivery_standard,
+      })
+      message.success('任务已更新')
+      setEditModalVisible(false)
+      fetchTasks()
+    } catch {}
+  }
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
-      const newTask: Task = {
-        id: Math.max(...mockTasks.map((t) => t.id)) + 1,
-        name: values.name, partner_id: values.partner_id,
-        partner_name: mockPartners.find((p) => p.id === values.partner_id)?.name || '',
-        type: values.type, description: values.description, priority: values.priority,
-        status: 'DRAFT',
-        start_date: values.date_range?.[0]?.format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD'),
-        end_date: values.date_range?.[1]?.format('YYYY-MM-DD') || dayjs().add(30, 'day').format('YYYY-MM-DD'),
-        budget: values.budget, progress: 0, created_at: dayjs().format('YYYY-MM-DD HH:mm'),
+      await apiClient.post('/tasks', {
+        name: values.name,
+        description: values.description,
+        type: values.type,
+        partner_id: values.partner_id,
+        priority: values.priority || 'MEDIUM',
+        budget: values.budget,
+        start_date: values.date_range?.[0]?.format('YYYY-MM-DD'),
+        end_date: values.date_range?.[1]?.format('YYYY-MM-DD'),
         delivery_standard: values.delivery_standard,
-      }
-      setTasks((prev) => [newTask, ...prev])
+      })
       message.success('任务创建成功')
       setCreateModalVisible(false)
+      fetchTasks()
     } catch {}
   }
-  const handleViewDetail = (task: Task) => {
+  const handleViewDetail = async (task: Task) => {
     setSelectedTask(task)
-    setProgressList(mockProgress[task.id] || [])
-    setDeliverables(mockDeliverables[task.id] || [])
-    setAssignments(mockAssignments[task.id] || [])
     setActiveTab('info')
     setDetailVisible(true)
+    try {
+      const [progRes, delRes, assignRes] = await Promise.all([
+        apiClient.get(`/tasks/${task.id}/progress`),
+        apiClient.get(`/tasks/${task.id}/deliverables`),
+        apiClient.get(`/tasks/${task.id}/assignments`),
+      ])
+      setProgressList(Array.isArray(progRes.data) ? progRes.data : [])
+      setDeliverables(Array.isArray(delRes.data) ? delRes.data : [])
+      setAssignments(Array.isArray(assignRes.data) ? assignRes.data : [])
+    } catch { setProgressList([]); setDeliverables([]); setAssignments([]) }
   }
   const handleDelay = (task: Task) => { setSelectedTask(task); delayForm.resetFields(); setDelayModalVisible(true) }
   const handleDelaySubmit = async () => {
     try {
       const values = await delayForm.validateFields()
-      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, end_date: values.new_end_date.format('YYYY-MM-DD') } : t))
+      await apiClient.post(`/tasks/${selectedTask!.id}/delay`, null, { params: { reason: values.reason, new_end_date: values.new_end_date.format('YYYY-MM-DD') } })
       message.success('延期申请已提交，等待审批')
       setDelayModalVisible(false)
+      fetchTasks()
     } catch {}
   }
   const handleAssign = (task: Task) => { setSelectedTask(task); assignForm.resetFields(); setAssignModalVisible(true) }
   const handleAssignSubmit = async () => {
     try {
       const values = await assignForm.validateFields()
-      const dev = mockDevelopers.find((d) => d.id === values.developer_id)
-      setAssignments((prev) => [...prev, { id: Date.now(), task_id: selectedTask!.id, developer_id: values.developer_id, developer_name: dev?.name || '', role: values.role, assigned_at: dayjs().format('YYYY-MM-DD HH:mm'), status: 'ACCEPTED' }])
-      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, status: 'ASSIGNED', developer_id: values.developer_id, developer_name: dev?.name } : t))
+      const res = await apiClient.post(`/tasks/${selectedTask!.id}/assign-developer`, {
+        developer_id: values.developer_id,
+        role: values.role,
+      })
+      const newAssign = res.data
+      setAssignments((prev) => [...(prev || []), { id: newAssign.id, task_id: newAssign.task_id, developer_id: newAssign.developer_id, developer_name: newAssign.developer_name, role: newAssign.role, assigned_at: newAssign.assigned_at, status: (newAssign.status || 'ACCEPTED') as 'PENDING' | 'ACCEPTED' | 'REJECTED' }])
+      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, status: 'ASSIGNED', developer_id: values.developer_id, developer_name: newAssign.developer_name } : t))
       message.success('开发者分配成功')
       setAssignModalVisible(false)
     } catch {}
   }
   const handleSubmitForAudit = (task: Task) => {
-    Modal.confirm({ title: '提交审批', icon: <ExclamationCircleOutlined />, content: '确认提交任务至审批？提交后任务将进入待审批状态。', okText: '确认提交', cancelText: '取消', onOk: () => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'PENDING_AUDIT' } : t)); message.success('任务已提交审批') } })
+    Modal.confirm({ title: '提交审批', icon: <ExclamationCircleOutlined />, content: '确认提交任务至审批？提交后任务将进入待审批状态。', okText: '确认提交', cancelText: '取消', onOk: async () => { try { await apiClient.put(`/tasks/${task.id}`, { status: 'PENDING_AUDIT' }); message.success('任务已提交审批'); fetchTasks() } catch {} } })
   }
   const handleAuditPass = (task: Task) => {
-    Modal.confirm({ title: '审批通过', icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, content: '确认审批通过？通过后任务将进入已分配状态。', okText: '通过', cancelText: '取消', onOk: () => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'ASSIGNED' } : t)); if (selectedTask?.id === task.id) setSelectedTask((prev) => prev ? { ...prev, status: 'ASSIGNED' } : null); message.success('审批已通过') } })
+    Modal.confirm({ title: '审批通过', icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, content: '确认审批通过？通过后任务将进入已分配状态。', okText: '通过', cancelText: '取消', onOk: async () => { try { await apiClient.post(`/tasks/${task.id}/accept`); message.success('审批已通过'); fetchTasks(); setDetailVisible(false) } catch {} } })
   }
   const handleAuditReject = (task: Task) => {
-    Modal.confirm({ title: '审批拒绝', icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, content: '确认拒绝该任务？', okText: '拒绝', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'REJECTED' } : t)); if (selectedTask?.id === task.id) setSelectedTask((prev) => prev ? { ...prev, status: 'REJECTED' } : null); message.error('任务已被拒绝') } })
+    Modal.confirm({ title: '审批拒绝', icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, content: '确认拒绝该任务？', okText: '拒绝', cancelText: '取消', okButtonProps: { danger: true }, onOk: async () => { try { await apiClient.post(`/tasks/${task.id}/reject`, null, { params: { reason: '' } }); message.error('任务已被拒绝'); fetchTasks(); setDetailVisible(false) } catch {} } })
   }
-  const handleUpdateProgress = (task: Task) => { setSelectedTask(task); progressForm.resetFields(); setProgressModalVisible(true) }
+  const handleUpdateProgress = (task: Task) => { setSelectedTask(task); progressForm.resetFields(); progressForm.setFieldsValue({ progress: task.progress }); setProgressModalVisible(true) }
   const handleProgressSubmit = async () => {
     try {
       const values = await progressForm.validateFields()
-      setProgressList((prev) => [...prev, { id: Date.now(), task_id: selectedTask!.id, content: values.content, progress: values.progress, created_at: dayjs().format('YYYY-MM-DD HH:mm'), creator_name: '当前用户' }])
-      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, progress: values.progress } : t))
+      await apiClient.put(`/tasks/${selectedTask!.id}/progress`, { progress: values.progress, description: values.content, status: selectedTask!.status })
       message.success('进度已更新')
       setProgressModalVisible(false)
+      await fetchTasks()
+      handleViewDetail({ ...selectedTask!, progress: values.progress })
     } catch {}
   }
   const handleUploadDeliverable = (task: Task) => { setSelectedTask(task); setDeliverableFileList([]); setDeliverableModalVisible(true) }
   const handleDeliverableSubmit = async () => {
     try {
-      setDeliverables((prev) => [...prev, { id: Date.now(), task_id: selectedTask!.id, name: deliverableFileList[0]?.name || '交付物文件', file_url: '/files/deliverable', file_size: deliverableFileList[0]?.size || 0, uploaded_at: dayjs().format('YYYY-MM-DD HH:mm'), uploaded_by: '当前用户' }])
-      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, status: 'DELIVERED' } : t))
+      const file = deliverableFileList[0]
+      if (!file) { message.error('请上传交付物'); return }
+      await apiClient.post(`/tasks/${selectedTask!.id}/deliverables`, null, { params: { name: file.name, file_url: file.url || '' } })
       message.success('交付物已上传')
       setDeliverableModalVisible(false)
-    } catch {}
+      handleViewDetail(selectedTask!)
+      fetchTasks()
+    } catch { message.error('上传失败') }
   }
   const handleAccept = (task: Task) => { setSelectedTask(task); acceptForm.resetFields(); setAcceptModalVisible(true) }
   const handleAcceptSubmit = async () => {
     try {
       await acceptForm.validateFields()
-      setTasks((prev) => prev.map((t) => t.id === selectedTask?.id ? { ...t, status: 'COMPLETED' } : t))
+      await apiClient.post(`/tasks/${selectedTask!.id}/accept`)
       message.success('任务已完成验收')
       setAcceptModalVisible(false)
       setDetailVisible(false)
+      fetchTasks()
     } catch {}
   }
   const handleRejectAccept = (task: Task) => {
-    Modal.confirm({ title: '拒绝验收', icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, content: '确认拒绝本次交付物？', okText: '拒绝', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'IN_PROGRESS' } : t)); message.warning('已拒绝验收，任务退回进行中状态') } })
+    Modal.confirm({ title: '拒绝验收', icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, content: '确认拒绝本次交付物？', okText: '拒绝', cancelText: '取消', okButtonProps: { danger: true }, onOk: async () => { try { await apiClient.post(`/tasks/${task.id}/reject`, null, { params: { reason: '' } }); message.warning('已拒绝验收，任务退回进行中状态'); fetchTasks() } catch {} } })
   }
   const handleArchive = (task: Task) => {
-    Modal.confirm({ title: '归档任务', icon: <FileTextOutlined />, content: '确认归档该任务？归档后可随时从归档区查看。', okText: '归档', cancelText: '取消', onOk: () => { setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, status: 'ARCHIVED' } : t)); message.success('任务已归档') } })
+    Modal.confirm({ title: '归档任务', icon: <FileTextOutlined />, content: '确认归档该任务？归档后可随时从归档区查看。', okText: '归档', cancelText: '取消', onOk: async () => { try { await apiClient.post(`/tasks/${task.id}/archive`); message.success('任务已归档'); fetchTasks() } catch {} } })
   }
   const handleDelete = (task: Task) => {
-    Modal.confirm({ title: '删除任务', icon: <ExclamationCircleOutlined />, content: `确认删除任务"${task.name}"？此操作不可恢复。`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => { setTasks((prev) => prev.filter((t) => t.id !== task.id)); message.success('任务已删除') } })
+    Modal.confirm({ title: '删除任务', icon: <ExclamationCircleOutlined />, content: `确认删除任务"${task.name}"？此操作不可恢复。`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: async () => { try { await apiClient.delete(`/tasks/${task.id}`); message.success('任务已删除'); fetchTasks() } catch {} } })
   }
 
   const getStepIndex = (status: TaskStatus) => {
@@ -363,6 +370,9 @@ const TaskRegistration: React.FC = () => {
   const renderActionButtons = (record: Task) => {
     const btns: React.ReactNode[] = []
     btns.push(<Button key="view" type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)}>查看</Button>)
+    if (['DRAFT', 'REJECTED'].includes(record.status)) {
+      btns.push(<Button key="edit" type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>)
+    }
     if (record.status === 'DRAFT') {
       btns.push(<Button key="audit" type="link" size="small" icon={<SendOutlined />} onClick={() => handleSubmitForAudit(record)}>提交</Button>)
       btns.push(<Button key="assign" type="link" size="small" icon={<SendOutlined />} onClick={() => handleAssign(record)}>分配</Button>)
@@ -392,22 +402,25 @@ const TaskRegistration: React.FC = () => {
   const columns: ColumnsType<Task> = [
     { title: '任务名称', dataIndex: 'name', key: 'name', ellipsis: true, render: (name: string, record) => <a onClick={() => handleViewDetail(record)} style={{ fontWeight: 500 }}>{name}</a> },
     { title: '合作伙伴', dataIndex: 'partner_name', key: 'partner_name', ellipsis: true },
-    { title: '类型', dataIndex: 'type', key: 'type', render: (t: string) => TASK_TYPES.find((x) => x.value === t)?.label || t },
-    { title: '优先级', dataIndex: 'priority', key: 'priority', render: (p: Priority) => <Tag color={PRIORITY_MAP[p].color} style={{ borderRadius: 12 }}>{PRIORITY_MAP[p].text}</Tag> },
+    { title: '类型', dataIndex: 'type', key: 'type', render: (t: string) => taskTypes.find((x) => x.value === t)?.label || t },
+    { title: '优先级', dataIndex: 'priority', key: 'priority', sorter: (a: Task, b: Task) => PRIORITY_SORT[a.priority] - PRIORITY_SORT[b.priority] || b.progress - a.progress || STATUS_SORT[a.status] - STATUS_SORT[b.status], defaultSortOrder: 'descend' as const, render: (p: Priority) => <Tag color={PRIORITY_MAP[p].color} style={{ borderRadius: 12 }}>{PRIORITY_MAP[p].text}</Tag> },
     { title: '状态', dataIndex: 'status', key: 'status', render: (s: TaskStatus) => <Badge status={STATUS_MAP[s].color as any} text={<span style={{ color: STATUS_MAP[s].color === 'error' ? '#ff4d4f' : STATUS_MAP[s].color === 'success' ? '#52c41a' : undefined }}>{STATUS_MAP[s].text}</span>} /> },
     { title: '进度', dataIndex: 'progress', key: 'progress', width: 130, render: (p: number, record) => <Progress percent={p} size="small" status={record.status === 'REJECTED' ? 'exception' : p === 100 ? 'success' : 'active'} strokeColor={record.status === 'REJECTED' ? '#ff4d4f' : p === 100 ? '#52c41a' : '#1677ff'} /> },
-    { title: '开始日期', dataIndex: 'start_date', key: 'start_date', width: 110 },
-    { title: '结束日期', dataIndex: 'end_date', key: 'end_date', width: 110 },
+    { title: '开始日期', dataIndex: 'start_date', key: 'start_date', width: 110, render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
+    { title: '结束日期', dataIndex: 'end_date', key: 'end_date', width: 110, render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
     { title: '开发者', dataIndex: 'developer_name', key: 'developer_name', ellipsis: true, render: (v) => v || <span style={{ color: '#999' }}>—</span> },
-    { title: '操作', key: 'action', width: 260, fixed: 'right', render: (_, record) => renderActionButtons(record) },
+    { title: '操作', key: 'action', width: 320, render: (_, record) => renderActionButtons(record) },
   ]
 
   return (
     <ConfigProvider locale={zhCN}>
       <div style={{ padding: '0 24px' }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>任务登记管理</h1>
-          <p style={{ color: '#999', margin: '4px 0 0', fontSize: 13 }}>创建、分配、跟踪、交付、验收全流程管理</p>
+        <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>任务登记管理</h1>
+            <p style={{ color: '#999', margin: '4px 0 0', fontSize: 13 }}>创建、分配、跟踪、交付、验收全流程管理</p>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} style={{ background: '#1677ff', marginTop: 4 }}>新建任务</Button>
         </div>
 
         <Row gutter={16} style={{ marginBottom: 20 }}>
@@ -452,56 +465,101 @@ const TaskRegistration: React.FC = () => {
           <div style={{ padding: '16px 0 12px' }}>
             <Row gutter={[12, 12]} align="middle">
               <Col xs={24} sm={12} lg={6}>
-                <Input placeholder="搜索任务名称..." prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />} value={filters.name} onChange={(e) => setFilters({ ...filters, name: e.target.value })} allowClear style={{ borderRadius: 8 }} />
+                <Input placeholder="搜索任务名称..." prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />} value={filters.name} onChange={(e) => { const v = e.target.value; const nf = { ...filters, name: v }; setFilters(nf); debouncedSearchTasks(nf); }} allowClear style={{ borderRadius: 8 }} />
               </Col>
               <Col xs={24} sm={12} lg={4}>
-                <Select placeholder="选择状态" style={{ width: '100%', borderRadius: 8 }} allowClear value={filters.status || undefined} onChange={(v) => setFilters({ ...filters, status: v || '' })}>
+                <Select placeholder="选择状态" style={{ width: '100%', borderRadius: 8 }} allowClear value={filters.status || undefined} onChange={(v) => { const nf = { ...filters, status: v || '' }; setFilters(nf); immediateSearchTasks(nf); }}>
                   {Object.entries(STATUS_MAP).map(([value, { text }]) => <Select.Option key={value} value={value}>{text}</Select.Option>)}
                 </Select>
               </Col>
               <Col xs={24} sm={12} lg={3}>
-                <Select placeholder="优先级" style={{ width: '100%' }} allowClear value={filters.priority || undefined} onChange={(v) => setFilters({ ...filters, priority: v || '' })}>
+                <Select placeholder="优先级" style={{ width: '100%' }} allowClear value={filters.priority || undefined} onChange={(v) => { const nf = { ...filters, priority: v || '' }; setFilters(nf); immediateSearchTasks(nf); }}>
                   {Object.entries(PRIORITY_MAP).map(([value, { text }]) => <Select.Option key={value} value={value}>{text}</Select.Option>)}
                 </Select>
               </Col>
               <Col xs={24} sm={12} lg={5}>
-                <Select placeholder="选择合作伙伴" style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" value={filters.partner_id} onChange={(v) => setFilters({ ...filters, partner_id: v })}>
-                  {mockPartners.map((p) => <Select.Option key={p.id} value={p.id} label={p.name}>{p.name}</Select.Option>)}
+                <Select placeholder="选择合作伙伴" style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" value={filters.partner_id} onChange={(v) => { const nf = { ...filters, partner_id: v }; setFilters(nf); immediateSearchTasks(nf); }}>
+                  {partners.map((p) => <Select.Option key={p.id} value={p.id} label={p.name}>{p.name}</Select.Option>)}
                 </Select>
               </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <RangePicker style={{ width: '100%', borderRadius: 8 }} value={filters.dateRange} onChange={(dates) => setFilters({ ...filters, dateRange: dates as any })} placeholder={['开始日期', '结束日期']} />
-              </Col>
-              <Col xs={24} sm={12} lg={24} style={{ textAlign: 'right' }}>
-                <Space>
-                  <Button onClick={() => setFilters({ name: '', status: '', priority: '', partner_id: undefined, dateRange: undefined })}>重置</Button>
-                  <Button type="primary" icon={<SearchOutlined />} onClick={fetchTasks}>搜索</Button>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} style={{ background: '#1677ff' }}>新建任务</Button>
-                </Space>
+              <Col xs={24} sm={12} lg={5}>
+                <RangePicker style={{ width: '100%', borderRadius: 8 }} value={filters.dateRange} onChange={(dates) => { const nf = { ...filters, dateRange: dates as any }; setFilters(nf); immediateSearchTasks(nf); }} placeholder={['开始日期', '结束日期']} allowClear />
               </Col>
             </Row>
           </div>
           <Table columns={columns} dataSource={tasks} rowKey="id" loading={loading} pagination={{ pageSize: 10, showSizeChanger: true, showQuickJumper: true, showTotal: (total) => `共 ${total} 条记录` }} scroll={{ x: 1200 }} />
         </Card>
 
-        <Modal title={<div style={{ fontSize: 16, fontWeight: 600, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>新建任务</div>} open={createModalVisible} onOk={handleSubmit} onCancel={() => setCreateModalVisible(false)} okText="创建" cancelText="取消" width={680} destroyOnClose maskClosable={false}>
-          <Form form={form} layout="vertical" requiredMark="optional" style={{ marginTop: 16 }}>
-            <Row gutter={16}>
-              <Col span={24}><Form.Item label="任务名称" name="name" rules={[{ required: true, message: '请输入任务名称', whitespace: true }]}><Input placeholder="请输入任务名称" maxLength={100} showCount /></Form.Item></Col>
-              <Col span={24}><Form.Item label="任务描述" name="description"><TextArea rows={3} placeholder="请输入任务详细描述..." maxLength={500} showCount /></Form.Item></Col>
-              <Col span={12}><Form.Item label="任务类型" name="type" rules={[{ required: true, message: '请选择任务类型' }]}><Select placeholder="请选择任务类型">{TASK_TYPES.map((t) => <Select.Option key={t.value} value={t.value}>{t.label}</Select.Option>)}</Select></Form.Item></Col>
-              <Col span={12}><Form.Item label="合作伙伴" name="partner_id" rules={[{ required: true, message: '请选择合作伙伴' }]}><Select placeholder="请选择合作伙伴" showSearch optionFilterProp="label">{mockPartners.map((p) => <Select.Option key={p.id} value={p.id} label={p.name}>{p.name}</Select.Option>)}</Select></Form.Item></Col>
-              <Col span={12}><Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择优先级' }]} initialValue="MEDIUM"><Select>{Object.entries(PRIORITY_MAP).map(([value, { text, color }]) => <Select.Option key={value} value={value}><Tag color={color} style={{ borderRadius: 10 }}>{text}</Tag></Select.Option>)}</Select></Form.Item></Col>
-              <Col span={12}><Form.Item label="预算（元）" name="budget" rules={[{ required: true, message: '请输入预算' }]}><Input type="number" placeholder="0" min={0} style={{ width: '100%' }} addonAfter="元" /></Form.Item></Col>
-              <Col span={24}><Form.Item label="执行周期" name="date_range" rules={[{ required: true, message: '请选择执行周期' }]}><RangePicker style={{ width: '100%' }} /></Form.Item></Col>
-              <Col span={24}><Form.Item label="交付标准" name="delivery_standard"><TextArea rows={2} placeholder="请描述任务交付标准..." maxLength={300} showCount /></Form.Item></Col>
-              <Col span={24}><Form.Item label="需求文档" name="requirement_doc" extra="支持 PDF、Word、Excel、图片等格式，单个文件不超过 50MB"><Upload.Dragger fileList={uploadFileList} onChange={({ fileList }) => setUploadFileList(fileList)} beforeUpload={() => false} maxCount={5} accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"><p style={{ margin: 0 }}><UploadOutlined style={{ fontSize: 28, color: '#1677ff' }} /></p><p style={{ margin: '8px 0 0', color: '#666', fontSize: 13 }}>点击或拖拽上传文件</p><p style={{ margin: 0, color: '#999', fontSize: 12 }}>支持多文件上传</p></Upload.Dragger></Form.Item></Col>
-            </Row>
+        <Modal title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span style={{ fontSize: 16, fontWeight: 600 }}>新建任务</span></Space>} open={createModalVisible} onOk={handleSubmit} onCancel={() => setCreateModalVisible(false)} okText="创建" cancelText="取消" width={720} destroyOnClose maskClosable={false} styles={{ body: { padding: '0 24px 24px' } }}>
+          <Form form={form} layout="vertical" requiredMark="optional" style={{ marginTop: 20 }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />基本信息</div>
+              <Row gutter={12}>
+                <Col span={24}><Form.Item label="任务名称" name="name" rules={[{ required: true, message: '请输入任务名称', whitespace: true }]} style={{ marginBottom: 12 }}><Input placeholder="请输入任务名称，如：BOSS系统接口优化" maxLength={100} showCount /></Form.Item></Col>
+                <Col span={24}><Form.Item label="任务描述" name="description" style={{ marginBottom: 12 }}><TextArea rows={2} placeholder="请描述任务背景、目标和范围..." maxLength={500} showCount /></Form.Item></Col>
+              </Row>
+            </div>
+            <div style={{ marginBottom: 20, padding: '16px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />分类属性</div>
+              <Row gutter={12}>
+                <Col span={8}><Form.Item label="任务类型" name="type" rules={[{ required: true, message: '请选择' }]} style={{ marginBottom: 8 }}><Select placeholder="请选择">{taskTypes.map((t) => <Select.Option key={t.value} value={t.value}>{t.label}</Select.Option>)}</Select></Form.Item></Col>
+                <Col span={10}><Form.Item label="合作伙伴" name="partner_id" rules={[{ required: true, message: '请选择' }]} style={{ marginBottom: 8 }}><Select placeholder="请选择合作伙伴" showSearch optionFilterProp="label">{partners.map((p) => <Select.Option key={p.id} value={p.id} label={p.name}>{p.name}</Select.Option>)}</Select></Form.Item></Col>
+                <Col span={6}><Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择' }]} initialValue="MEDIUM" style={{ marginBottom: 8 }}><Select>{Object.entries(PRIORITY_MAP).map(([value, { text, color }]) => <Select.Option key={value} value={value}><Tag color={color} style={{ borderRadius: 10 }}>{text}</Tag></Select.Option>)}</Select></Form.Item></Col>
+              </Row>
+            </div>
+            <div style={{ marginBottom: 20, padding: '16px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />计划与预算</div>
+              <Row gutter={12}>
+                <Col span={12}><Form.Item label="开始日期" name="date_range" rules={[{ required: true, message: '请选择' }]} style={{ marginBottom: 8 }}><DatePicker style={{ width: '100%' }} placeholder="开始日期" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="结束日期" style={{ marginBottom: 8 }}><DatePicker style={{ width: '100%' }} placeholder="结束日期" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="预算（元）" name="budget" rules={[{ required: true, message: '请输入' }]} style={{ marginBottom: 8 }}><Input type="number" placeholder="0" min={0} style={{ width: '100%' }} addonAfter="元" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="交付标准" name="delivery_standard" style={{ marginBottom: 8 }}><Input placeholder="请描述交付标准..." maxLength={300} /></Form.Item></Col>
+              </Row>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />需求文档</div>
+              <Form.Item label="需求文档" name="requirement_doc" extra="支持 PDF、Word、Excel、图片等格式，单个文件不超过 50MB" style={{ marginBottom: 0 }}>
+                <Upload.Dragger fileList={uploadFileList} onChange={({ fileList }) => setUploadFileList(fileList)} beforeUpload={() => false} maxCount={5} accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+                  <p style={{ margin: 0 }}><UploadOutlined style={{ fontSize: 28, color: '#1677ff' }} /></p>
+                  <p style={{ margin: '8px 0 0', color: '#666', fontSize: 13 }}>点击或拖拽上传文件</p>
+                  <p style={{ margin: 0, color: '#999', fontSize: 12 }}>支持多文件上传</p>
+                </Upload.Dragger>
+              </Form.Item>
+            </div>
+          </Form>
+        </Modal>
+
+        <Modal title={<Space><EditOutlined style={{ color: '#1677ff' }} /><span style={{ fontSize: 16, fontWeight: 600 }}>编辑任务</span></Space>} open={editModalVisible} onOk={handleEditSubmit} onCancel={() => setEditModalVisible(false)} okText="保存" cancelText="取消" width={720} destroyOnClose maskClosable={false} styles={{ body: { padding: '0 24px 24px' } }}>
+          <Form form={editForm} layout="vertical" requiredMark="optional" style={{ marginTop: 20 }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />基本信息</div>
+              <Row gutter={12}>
+                <Col span={24}><Form.Item label="任务名称" name="name" rules={[{ required: true, message: '请输入任务名称', whitespace: true }]} style={{ marginBottom: 12 }}><Input placeholder="请输入任务名称" maxLength={100} showCount /></Form.Item></Col>
+                <Col span={24}><Form.Item label="任务描述" name="description" style={{ marginBottom: 12 }}><TextArea rows={2} placeholder="请描述任务背景、目标和范围..." maxLength={500} showCount /></Form.Item></Col>
+              </Row>
+            </div>
+            <div style={{ marginBottom: 20, padding: '16px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />分类属性</div>
+              <Row gutter={12}>
+                <Col span={8}><Form.Item label="任务类型" name="type" rules={[{ required: true, message: '请选择' }]} style={{ marginBottom: 8 }}><Select placeholder="请选择">{taskTypes.map((t) => <Select.Option key={t.value} value={t.value}>{t.label}</Select.Option>)}</Select></Form.Item></Col>
+                <Col span={8}><Form.Item label="优先级" name="priority" rules={[{ required: true, message: '请选择' }]} style={{ marginBottom: 8 }}><Select>{Object.entries(PRIORITY_MAP).map(([value, { text, color }]) => <Select.Option key={value} value={value}><Tag color={color} style={{ borderRadius: 10 }}>{text}</Tag></Select.Option>)}</Select></Form.Item></Col>
+              </Row>
+            </div>
+            <div style={{ marginBottom: 20, padding: '16px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#262626', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 4, height: 16, background: '#1677ff', borderRadius: 2, display: 'inline-block' }} />计划与预算</div>
+              <Row gutter={12}>
+                <Col span={12}><Form.Item label="开始日期" name="start_date" style={{ marginBottom: 8 }}><DatePicker style={{ width: '100%' }} placeholder="开始日期" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="结束日期" name="end_date" style={{ marginBottom: 8 }}><DatePicker style={{ width: '100%' }} placeholder="结束日期" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="预算（元）" name="budget" style={{ marginBottom: 8 }}><Input type="number" placeholder="0" min={0} style={{ width: '100%' }} addonAfter="元" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="交付标准" name="delivery_standard" style={{ marginBottom: 8 }}><Input placeholder="请描述交付标准..." maxLength={300} /></Form.Item></Col>
+              </Row>
+            </div>
           </Form>
         </Modal>
 
         <Drawer title={<Space><FileTextOutlined style={{ color: '#1677ff' }} /><span style={{ fontWeight: 600 }}>任务详情</span>{selectedTask && <Tag color={STATUS_MAP[selectedTask.status].color} style={{ borderRadius: 10 }}>{STATUS_MAP[selectedTask.status].text}</Tag>}</Space>} open={detailVisible} onClose={() => setDetailVisible(false)} width={780} styles={{ body: { padding: '0 24px 24px' } }}
           extra={selectedTask && <Space>
+            {['DRAFT', 'REJECTED'].includes(selectedTask.status) && (<Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(selectedTask)}>编辑</Button>)}
             {selectedTask.status === 'DRAFT' && (<><Button size="small" onClick={() => handleAssign(selectedTask)}>分配</Button><Button type="primary" size="small" onClick={() => handleSubmitForAudit(selectedTask)}>提交审批</Button></>)}
             {selectedTask.status === 'PENDING_AUDIT' && (<><Button size="small" danger onClick={() => handleAuditReject(selectedTask)}>拒绝</Button><Button type="primary" size="small" onClick={() => handleAuditPass(selectedTask)}>通过</Button></>)}
             {['ASSIGNED', 'IN_PROGRESS'].includes(selectedTask.status) && (<><Button size="small" onClick={() => handleUpdateProgress(selectedTask)}>更新进度</Button>{selectedTask.status === 'IN_PROGRESS' && <Button type="primary" size="small" onClick={() => handleUploadDeliverable(selectedTask)}>提交交付物</Button>}</>)}
@@ -515,7 +573,7 @@ const TaskRegistration: React.FC = () => {
                   <Descriptions.Item label="任务名称" span={2}><strong>{selectedTask.name}</strong></Descriptions.Item>
                   <Descriptions.Item label="合作伙伴">{selectedTask.partner_name}</Descriptions.Item>
                   <Descriptions.Item label="开发者">{selectedTask.developer_name || <span style={{ color: '#999' }}>未分配</span>}</Descriptions.Item>
-                  <Descriptions.Item label="任务类型">{TASK_TYPES.find((t) => t.value === selectedTask.type)?.label}</Descriptions.Item>
+                  <Descriptions.Item label="任务类型">{taskTypes.find((t) => t.value === selectedTask.type)?.label}</Descriptions.Item>
                   <Descriptions.Item label="优先级"><Tag color={PRIORITY_MAP[selectedTask.priority].color} style={{ borderRadius: 10 }}>{PRIORITY_MAP[selectedTask.priority].text}</Tag></Descriptions.Item>
                   <Descriptions.Item label="开始日期">{selectedTask.start_date}</Descriptions.Item>
                   <Descriptions.Item label="结束日期"><Space>{selectedTask.end_date}{dayjs(selectedTask.end_date).isBefore(dayjs()) && selectedTask.status !== 'COMPLETED' && selectedTask.status !== 'ARCHIVED' && <Tooltip title="已超时"><WarningOutlined style={{ color: '#ff4d4f' }} /></Tooltip>}</Space></Descriptions.Item>
@@ -554,7 +612,7 @@ const TaskRegistration: React.FC = () => {
 
         <Modal title="分配开发者" open={assignModalVisible} onOk={handleAssignSubmit} onCancel={() => setAssignModalVisible(false)} okText="确认分配" cancelText="取消" destroyOnClose>
           <Form form={assignForm} layout="vertical" style={{ marginTop: 16 }}>
-            <Form.Item label="选择开发者" name="developer_id" rules={[{ required: true, message: '请选择开发者' }]}><Select placeholder="请选择开发者" showSearch optionFilterProp="label">{mockDevelopers.map((d) => <Select.Option key={d.id} value={d.id} label={`${d.name} - ${d.skill}`}><Space><span>{d.name}</span><Tag color="blue" style={{ borderRadius: 8, fontSize: 11 }}>{d.skill}</Tag></Space></Select.Option>)}</Select></Form.Item>
+            <Form.Item label="选择开发者" name="developer_id" rules={[{ required: true, message: '请选择开发者' }]}><Select placeholder="请选择开发者" showSearch optionFilterProp="label">{developers.map((d) => <Select.Option key={d.id} value={d.id} label={d.name}><Space><span>{d.name}</span></Space></Select.Option>)}</Select></Form.Item>
             <Form.Item label="角色" name="role" rules={[{ required: true, message: '请输入角色' }]} initialValue="主开发"><Select><Select.Option value="主开发">主开发</Select.Option><Select.Option value="辅助开发">辅助开发</Select.Option><Select.Option value="测试">测试</Select.Option><Select.Option value="设计">设计</Select.Option></Select></Form.Item>
           </Form>
         </Modal>

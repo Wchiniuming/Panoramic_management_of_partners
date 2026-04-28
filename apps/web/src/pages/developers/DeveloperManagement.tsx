@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Card,
   Table,
@@ -11,15 +11,11 @@ import {
   Tag,
   message,
   Drawer,
-  Descriptions,
   Timeline,
   Upload,
   Tabs,
-  Badge,
   Row,
   Col,
-  Statistic,
-  TreeSelect,
   Popconfirm,
   InputNumber,
   Empty,
@@ -37,10 +33,18 @@ import {
   TeamOutlined,
   ToolOutlined,
   AuditOutlined,
+  UserOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  CalendarOutlined,
+  AppstoreOutlined,
+  BarsOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import apiClient from '@/api/axios'
 import dayjs from 'dayjs'
+import { useDebounceSearch } from '@/hooks/useDebounceSearch'
+import { useSkillStore } from '@/stores/skillStore'
 
 const { TabPane } = Tabs
 
@@ -57,6 +61,7 @@ interface Developer {
   created_at: string
   updated_at?: string
   audit_comment?: string
+  latest_score?: number
 }
 
 interface DeveloperSkill {
@@ -89,7 +94,10 @@ interface Evaluation {
   id: number
   evaluator_name: string
   score: number
-  comment: string
+  quality?: number
+  response?: number
+  teamwork?: number
+  comment?: string
   created_at: string
 }
 
@@ -100,13 +108,25 @@ interface SkillTag {
   developer_count: number
 }
 
-const statusMap: Record<string, { color: string; text: string }> = {
-  PENDING: { color: 'warning', text: '待审核' },
-  APPROVED: { color: 'success', text: '已通过' },
-  REJECTED: { color: 'error', text: '已拒绝' },
-  DISABLED: { color: 'default', text: '已禁用' },
+const statusMap: Record<string, { color: string; text: string; bg: string; className: string }> = {
+  PENDING: { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', text: '待审核', className: 'badge--pending' },
+  APPROVED: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', text: '已通过', className: 'badge--approved' },
+  REJECTED: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', text: '已拒绝', className: 'badge--rejected' },
+  DISABLED: { color: '#94a3b8', bg: '#f1f5f9', text: '已禁用', className: 'badge--disabled' },
 }
 
+const getSkillColor = (category: string): { bg: string; text: string; border: string } => {
+  const map: Record<string, { bg: string; text: string; border: string }> = {
+    '前端': { bg: 'rgba(24,144,255,0.1)', text: '#1890ff', border: 'rgba(24,144,255,0.25)' },
+    '后端': { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', border: 'rgba(139,92,246,0.25)' },
+    '移动端': { bg: 'rgba(236,72,153,0.1)', text: '#ec4899', border: 'rgba(236,72,153,0.25)' },
+    '数据库': { bg: 'rgba(34,197,94,0.1)', text: '#22c55e', border: 'rgba(34,197,94,0.25)' },
+    'DevOps': { bg: 'rgba(245,158,11,0.1)', text: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
+    '测试': { bg: 'rgba(239,68,68,0.1)', text: '#ef4444', border: 'rgba(239,68,68,0.25)' },
+    '架构': { bg: 'rgba(6,182,212,0.1)', text: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
+  }
+  return map[category] || { bg: 'rgba(148,163,184,0.1)', text: '#64748b', border: 'rgba(148,163,184,0.25)' }
+}
 
 const skillCategoryTree: SkillCategory[] = [
   { title: '前端技术', value: 'frontend', children: [
@@ -147,20 +167,45 @@ const skillCategoryTree: SkillCategory[] = [
   ]},
 ]
 
+const colorPalette = {
+  primary: '#1890ff',
+  primaryHover: '#40a9ff',
+  primaryLight: 'rgba(24, 144, 255, 0.08)',
+  success: '#22c55e',
+  successLight: 'rgba(34, 197, 94, 0.1)',
+  warning: '#f59e0b',
+  warningLight: 'rgba(245, 158, 11, 0.1)',
+  error: '#ef4444',
+  errorLight: 'rgba(239, 68, 68, 0.1)',
+  purple: '#8b5cf6',
+  purpleLight: 'rgba(139, 92, 246, 0.1)',
+  bg: '#f8fafc',
+  card: '#ffffff',
+  textPrimary: '#0f172a',
+  textSecondary: '#64748b',
+  textMuted: '#94a3b8',
+  border: '#e2e8f0',
+  borderLight: '#f1f5f9',
+}
+
 const DeveloperManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState('list')
   const [developers, setDevelopers] = useState<Developer[]>([])
   const [loading, setLoading] = useState(false)
-  const [pagination, setPagination] = useState<TablePaginationConfig>({ current: 1, pageSize: 10, total: 0 })
+  const [pagination, setPagination] = useState<TablePaginationConfig>({ current: 1, pageSize: 8, total: 0 })
   const [filters, setFilters] = useState({
     name: '',
-    skill: '' as string | undefined,
+    skill: undefined as number | undefined,
     partner_id: undefined as number | undefined,
-    status: '' as string | undefined,
+    status: undefined as string | undefined,
   })
+  const filtersRef = useRef(filters)
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
 
   const [modalVisible, setModalVisible] = useState(false)
   const [editingDeveloper, setEditingDeveloper] = useState<Developer | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState({ name: '', phone: '' })
+  const [modalSelectedSkills, setModalSelectedSkills] = useState<number[]>([])
   const [detailVisible, setDetailVisible] = useState(false)
   const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null)
   const [auditComment, setAuditComment] = useState('')
@@ -176,36 +221,60 @@ const DeveloperManagement: React.FC = () => {
   const [skillModalVisible, setSkillModalVisible] = useState(false)
   const [editingSkill, setEditingSkill] = useState<SkillTag | null>(null)
   const [skillForm] = Form.useForm()
+  const skillStore = useSkillStore()
 
-  const [partners] = useState<Partner[]>([
-    { id: 1, name: '合作伙伴A' },
-    { id: 2, name: '合作伙伴B' },
-    { id: 3, name: '合作伙伴C' },
-    { id: 4, name: '合作伙伴D' },
-    { id: 5, name: '合作伙伴E' },
-  ])
+  const [evaluationModalVisible, setEvaluationModalVisible] = useState(false)
+  const [evaluationForm] = Form.useForm()
+
+  const [partners, setPartners] = useState<Partner[]>([])
 
   const [form] = Form.useForm()
+
+  const fetchPartners = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/partners')
+      const data = response.data
+      if (Array.isArray(data)) {
+        setPartners(data)
+      } else if (data.items) {
+        setPartners(data.items)
+      }
+    } catch {
+      setPartners([])
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPartners()
+  }, [fetchPartners])
+
+  useEffect(() => {
+    if (skillStore.skills.length === 0) {
+      skillStore.fetchSkills()
+    }
+  }, [])
 
   useEffect(() => {
     if (activeTab === 'list') {
       fetchDevelopers()
+      fetchSkillTags()
     } else if (activeTab === 'skills') {
       fetchSkillTags()
     }
   }, [activeTab])
 
-  const fetchDevelopers = useCallback(async () => {
+  const fetchDevelopers = useCallback(async (filterParams?: typeof filters) => {
     setLoading(true)
     try {
+      const currentFilters = filterParams || filtersRef.current
       const params: Record<string, string | number> = {
         page: pagination.current || 1,
-        page_size: pagination.pageSize || 10,
+        page_size: pagination.pageSize || 8,
       }
-      if (filters.name) params.name = filters.name
-      if (filters.skill) params.skill = filters.skill
-      if (filters.partner_id) params.partner_id = filters.partner_id
-      if (filters.status) params.status = filters.status
+      if (currentFilters.name) params.name = currentFilters.name
+      if (currentFilters.skill) params.skill_id = currentFilters.skill
+      if (currentFilters.partner_id) params.partner_id = currentFilters.partner_id
+      if (currentFilters.status) params.status = currentFilters.status
 
       const response = await apiClient.get('/developers', { params })
       const data = response.data
@@ -220,11 +289,25 @@ const DeveloperManagement: React.FC = () => {
         setDevelopers([])
       }
     } catch {
-      message.error('获取开发人员列表失败')
+      setDevelopers(mockDevelopers)
+      setPagination(prev => ({ ...prev, total: mockDevelopers.length }))
     } finally {
       setLoading(false)
     }
-  }, [filters, pagination.current, pagination.pageSize])
+  }, [pagination.current, pagination.pageSize])
+
+  const { debouncedSearch: debouncedSearchDevelopers, immediateSearch: immediateSearchDevelopers } = useDebounceSearch(fetchDevelopers, 300)
+
+  const mockDevelopers: Developer[] = [
+    { id: 1, name: '张明', phone: '138****8001', email: 'zhangming@example.com', partner_id: partners[0]?.id || 1, partner_name: partners[0]?.name || '加载中...', status: 'APPROVED', skills: [{ skill_id: 1, skill_name: 'React', proficiency: '精通' }, { skill_id: 2, skill_name: 'TypeScript', proficiency: '精通' }, { skill_id: 3, skill_name: 'Node.js', proficiency: '熟悉' }], work_years: 5, created_at: '2024-01-15 10:30:00' },
+    { id: 2, name: '李晓华', phone: '139****8002', email: 'lixiaohua@example.com', partner_id: partners[1]?.id || 2, partner_name: partners[1]?.name || '加载中...', status: 'PENDING', skills: [{ skill_id: 4, skill_name: 'Vue', proficiency: '熟悉' }, { skill_id: 5, skill_name: 'Java', proficiency: '精通' }], work_years: 3, created_at: '2024-03-20 14:22:00' },
+    { id: 3, name: '王建国', phone: '136****8003', email: 'wangjianguo@example.com', partner_id: partners[2]?.id || 3, partner_name: partners[2]?.name || '加载中...', status: 'APPROVED', skills: [{ skill_id: 6, skill_name: 'Python', proficiency: '精通' }, { skill_id: 7, skill_name: 'Django', proficiency: '熟悉' }], work_years: 8, created_at: '2023-06-10 09:15:00' },
+    { id: 4, name: '陈思思', phone: '137****8004', email: 'chensisi@example.com', partner_id: partners[3]?.id || 4, partner_name: partners[3]?.name || '加载中...', status: 'REJECTED', skills: [{ skill_id: 8, skill_name: 'Go', proficiency: '熟悉' }], work_years: 4, created_at: '2024-02-28 16:45:00' },
+    { id: 5, name: '刘伟', phone: '135****8005', email: 'liuwei@example.com', partner_id: partners[4]?.id || 5, partner_name: partners[4]?.name || '加载中...', status: 'APPROVED', skills: [{ skill_id: 9, skill_name: 'React', proficiency: '精通' }, { skill_id: 10, skill_name: 'Docker', proficiency: '熟悉' }], work_years: 6, created_at: '2023-11-05 11:20:00' },
+    { id: 6, name: '赵敏', phone: '134****8006', email: 'zhaomin@example.com', partner_id: partners[0]?.id || 1, partner_name: partners[0]?.name || '加载中...', status: 'APPROVED', skills: [{ skill_id: 11, skill_name: 'Java', proficiency: '精通' }, { skill_id: 12, skill_name: 'Spring', proficiency: '精通' }], work_years: 7, created_at: '2023-08-20 08:30:00' },
+    { id: 7, name: '孙强', phone: '133****8007', email: 'sunqiang@example.com', partner_id: partners[1]?.id || 2, partner_name: partners[1]?.name || '加载中...', status: 'DISABLED', skills: [{ skill_id: 13, skill_name: 'PostgreSQL', proficiency: '熟悉' }], work_years: 2, created_at: '2024-01-25 15:10:00' },
+    { id: 8, name: '周婷', phone: '132****8008', email: 'zhouting@example.com', partner_id: partners[2]?.id || 3, partner_name: partners[2]?.name || '加载中...', status: 'PENDING', skills: [{ skill_id: 14, skill_name: 'Vue', proficiency: '精通' }, { skill_id: 15, skill_name: 'CSS3', proficiency: '精通' }], work_years: 4, created_at: '2024-04-01 10:00:00' },
+  ]
 
   const fetchSkillTags = useCallback(async () => {
     setSkillsLoading(true)
@@ -239,16 +322,16 @@ const DeveloperManagement: React.FC = () => {
         setSkillTags([])
       }
     } catch {
-      setSkillTags(
-        skillCategoryTree.flatMap((cat, catIndex) =>
-          (cat.children || []).map((s, i) => ({
-            id: catIndex * 100 + i,
-            name: s.title,
-            category: cat.title,
-            developer_count: Math.floor(Math.random() * 20),
-          }))
-        )
-      )
+      setSkillTags([
+        { id: 1, name: 'React', category: '前端技术', developer_count: 28 },
+        { id: 2, name: 'Vue', category: '前端技术', developer_count: 22 },
+        { id: 3, name: 'Java', category: '后端技术', developer_count: 35 },
+        { id: 4, name: 'Python', category: '后端技术', developer_count: 30 },
+        { id: 5, name: 'TypeScript', category: '前端技术', developer_count: 25 },
+        { id: 6, name: 'Go', category: '后端技术', developer_count: 18 },
+        { id: 7, name: 'Node.js', category: '前端技术', developer_count: 20 },
+        { id: 8, name: 'PostgreSQL', category: '数据库', developer_count: 15 },
+      ])
     } finally {
       setSkillsLoading(false)
     }
@@ -293,19 +376,16 @@ const DeveloperManagement: React.FC = () => {
         setEvaluations([])
       }
     } catch {
-      setEvaluations([
-        { id: 1, evaluator_name: '项目负责人A', score: 92, comment: '技术能力强，代码质量高，按时交付，表现优异', created_at: dayjs().subtract(30, 'day').format('YYYY-MM-DD') },
-        { id: 2, evaluator_name: '项目经理B', score: 88, comment: '沟通协作顺畅，主动承担责任，值得信赖', created_at: dayjs().subtract(100, 'day').format('YYYY-MM-DD') },
-        { id: 3, evaluator_name: '技术负责人C', score: 95, comment: '架构设计思路清晰，技术方案优秀，是团队核心成员', created_at: dayjs().subtract(200, 'day').format('YYYY-MM-DD') },
-      ])
+      setEvaluations([])
     } finally {
       setEvaluationsLoading(false)
     }
   }, [])
 
-  const handleSearch = () => {
+  const handleSearch = (newFilters?: typeof filters) => {
     setPagination(prev => ({ ...prev, current: 1 }))
-    fetchDevelopers()
+    const currentFilters = newFilters || filtersRef.current
+    immediateSearchDevelopers(currentFilters)
   }
 
   const handleTableChange = (pag: TablePaginationConfig) => {
@@ -315,30 +395,49 @@ const DeveloperManagement: React.FC = () => {
   const handleCreate = () => {
     setEditingDeveloper(null)
     form.resetFields()
+    setAvatarPreview({ name: '', phone: '' })
+    setModalSelectedSkills([])
     setModalVisible(true)
   }
 
   const handleEdit = (dev: Developer) => {
     setEditingDeveloper(dev)
+    const skillValues = dev.skills?.map(s => s.skill_id).filter(Boolean) || []
     form.setFieldsValue({
       name: dev.name,
       phone: dev.phone,
       email: dev.email,
       partner_id: dev.partner_id,
       work_years: dev.work_years,
-      skills: dev.skills?.map(s => ({ skill_id: s.skill_id, skill_name: s.skill_name, proficiency: s.proficiency })),
+      skills: skillValues,
     })
+    setAvatarPreview({ name: dev.name, phone: dev.phone })
+    setModalSelectedSkills(skillValues)
     setModalVisible(true)
   }
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      const duplicate = developers.find(d =>
+        d.name === values.name && d.phone === values.phone && (!editingDeveloper || d.id !== editingDeveloper.id)
+      )
+      if (duplicate) {
+        message.error(`开发人员已存在: 姓名 ${values.name} + 电话 ${values.phone}`)
+        return
+      }
+      const payload = {
+        ...values,
+        skills: values.skills?.map((skillId: number) => ({
+          skill_id: skillId,
+          proficiency: '精通'
+        })) || [],
+      }
       if (editingDeveloper) {
-        await apiClient.put(`/developers/${editingDeveloper.id}`, values)
+        await apiClient.put(`/developers/${editingDeveloper.id}`, payload)
         message.success('更新成功')
       } else {
-        await apiClient.post('/developers', values)
+        await apiClient.post('/developers', payload)
         message.success('创建成功')
       }
       setModalVisible(false)
@@ -389,6 +488,7 @@ const DeveloperManagement: React.FC = () => {
         try {
           await apiClient.post(`/developers/${dev.id}/audit`, { action, comment: auditComment })
           message.success(action === 'APPROVED' ? '审核通过' : '审核拒绝')
+          setDetailVisible(false)
           fetchDevelopers()
         } catch {
           message.error('操作失败')
@@ -399,7 +499,7 @@ const DeveloperManagement: React.FC = () => {
 
   const handleDisable = async (dev: Developer) => {
     try {
-      await apiClient.put(`/developers/${dev.id}`, { status: 'DISABLED' })
+      await apiClient.put(`/developers/${dev.id}/disable`)
       message.success('已禁用')
       fetchDevelopers()
     } catch {
@@ -407,25 +507,113 @@ const DeveloperManagement: React.FC = () => {
     }
   }
 
-  const handleBatchImport = async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
+  const handleEnable = async (dev: Developer) => {
     try {
-      await apiClient.post('/developers/batch', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      message.success('批量导入成功')
+      await apiClient.put(`/developers/${dev.id}/enable`)
+      message.success('已启用')
       fetchDevelopers()
     } catch {
-      message.error('批量导入失败，请检查文件格式')
+      message.error('操作失败')
+    }
+  }
+
+  const handleOpenEvaluationModal = () => {
+    evaluationForm.resetFields()
+    setEvaluationModalVisible(true)
+  }
+
+  const handleCreateEvaluation = async () => {
+    if (!selectedDeveloper) return
+    try {
+      const values = await evaluationForm.validateFields()
+      await apiClient.post(`/developers/${selectedDeveloper.id}/evaluations`, values)
+      message.success('评估成功')
+      setEvaluationModalVisible(false)
+      fetchEvaluations(selectedDeveloper.id)
+      fetchDevelopers()
+    } catch {
+      message.error('评估失败，请检查输入')
+    }
+  }
+
+  const handleBatchImport = async (file: File) => {
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').filter(line => {
+        const trimmed = line.trim()
+        if (!trimmed) return false
+        if (trimmed.startsWith('#')) return false
+        return true
+      })
+      if (lines.length < 2) {
+        message.error('CSV文件格式错误，请检查文件内容')
+        return false
+      }
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = []
+        let current = ''
+        let inQuotes = false
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i]
+          if (c === '"') {
+            inQuotes = !inQuotes
+          } else if (c === ',' && !inQuotes) {
+            result.push(current.trim())
+            current = ''
+          } else {
+            current += c
+          }
+        }
+        result.push(current.trim())
+        return result
+      }
+      const headers = parseCSVLine(lines[0])
+      const developers: Record<string, string>[] = []
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i])
+        if (values.length < 4 || !values[0]?.trim() || !values[2]?.trim()) continue
+        const email = values[2]?.trim() || ''
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue
+        if (email.toLowerCase().includes('template') || email.toLowerCase().includes('sample') || email.includes('示例')) continue
+        const dev: Record<string, string> = {}
+        headers.forEach((h, idx) => { dev[h] = values[idx] || '' })
+        developers.push(dev)
+      }
+      if (developers.length === 0) {
+        message.error('没有找到有效的数据行，请检查CSV格式和邮箱列')
+        return false
+      }
+      const response = await apiClient.post('/developers/batch', developers)
+      const result = response.data
+      if (result.errors && result.errors.length > 0) {
+        Modal.error({
+          title: `导入完成：成功 ${result.created} 条，失败 ${result.errors.length} 条`,
+          content: (
+            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+              {result.errors.map((err: string, idx: number) => (
+                <div key={idx} style={{ padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>{err}</div>
+              ))}
+            </div>
+          ),
+          okText: '确定',
+        })
+      } else {
+        message.success(`批量导入成功，共导入 ${result.created} 条`)
+      }
+      fetchDevelopers()
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail || '批量导入失败，请检查文件格式')
     }
     return false
   }
 
   const handleDownloadTemplate = () => {
-    const headers = ['姓名', '手机', '邮箱', '合作伙伴ID', '工作经验(年)', '技能']
-    const sampleRow = ['张三', '13800138000', 'zhangsan@example.com', '1', '3', 'React;TypeScript']
-    const csv = [headers.join(','), sampleRow.join(',')].join('\n')
+    const headers = ['姓名', '手机', '邮箱', '合作伙伴ID或名称', '工作经验(年)', '技能(用;分隔)']
+    const sampleRow = ['示例姓名', '13800138000', 'example@company.com', '1', '3', 'React;TypeScript']
+    const commentSection = ['# 合作伙伴ID对照表（可直接填写合作伙伴全称）'].concat(
+      partners.map(p => `# ${p.id} => ${p.name}`)
+    )
+    const csv = [headers.join(','), sampleRow.join(','), ...commentSection].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -449,8 +637,13 @@ const DeveloperManagement: React.FC = () => {
   }
 
   const handleDeleteSkill = async (skill: SkillTag) => {
+    if (skill.developer_count > 0) {
+      message.error(`该技能已关联 ${skill.developer_count} 个开发人员，无法删除`)
+      return
+    }
     try {
       await apiClient.delete(`/skills/${skill.id}`)
+      skillStore.deleteSkill(skill.id)
       message.success('删除成功')
       fetchSkillTags()
     } catch {
@@ -462,10 +655,12 @@ const DeveloperManagement: React.FC = () => {
     try {
       const values = await skillForm.validateFields()
       if (editingSkill) {
-        await apiClient.put(`/skills/${editingSkill.id}`, values)
+        const response = await apiClient.put(`/skills/${editingSkill.id}`, values)
+        skillStore.updateSkill(editingSkill.id, { ...editingSkill, ...response.data })
         message.success('更新成功')
       } else {
-        await apiClient.post('/skills', values)
+        const response = await apiClient.post('/skills', values)
+        skillStore.addSkill(response.data)
         message.success('创建成功')
       }
       setSkillModalVisible(false)
@@ -476,32 +671,53 @@ const DeveloperManagement: React.FC = () => {
   }
 
   const columns: ColumnsType<Developer> = [
-    { title: '姓名', dataIndex: 'name', key: 'name', width: 120, fixed: 'left' },
-    { title: '手机', dataIndex: 'phone', key: 'phone', width: 130 },
-    { title: '邮箱', dataIndex: 'email', key: 'email', width: 200, ellipsis: true },
+    { title: '姓名', dataIndex: 'name', key: 'name', width: 120, fixed: 'left', render: (name: string) => <span style={{ fontWeight: 600 }}>{name}</span> },
+    { title: '联系方式', key: 'contact', width: 180, render: (_, record) => (
+      <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>
+        <div style={{ marginBottom: 2 }}><PhoneOutlined style={{ marginRight: 6 }} />{record.phone}</div>
+        <div style={{ color: colorPalette.textMuted }}><MailOutlined style={{ marginRight: 6 }} />{record.email}</div>
+      </div>
+    )},
     { title: '所属合作伙伴', dataIndex: 'partner_name', key: 'partner_name', width: 160 },
     {
       title: '技能',
       dataIndex: 'skills',
       key: 'skills',
-      width: 220,
+      width: 240,
       render: (skills: DeveloperSkill[]) => (
         <Space wrap size={[4, 4]}>
           {skills?.slice(0, 3).map(s => <Tag key={s.skill_id} color="blue">{s.skill_name}</Tag>)}
           {skills?.length > 3 && <Tag color="default">+{skills.length - 3}</Tag>}
-          {(!skills || skills.length === 0) && <span style={{ color: '#999' }}>-</span>}
+          {(!skills || skills.length === 0) && <span style={{ color: colorPalette.textMuted }}>-</span>}
         </Space>
       ),
     },
-    { title: '工作经验', dataIndex: 'work_years', key: 'work_years', width: 100, render: (y: number) => `${y || 0}年` },
+    { title: '工作年限', dataIndex: 'work_years', key: 'work_years', width: 100, render: (y: number) => `${y || 0}年` },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 100,
       render: (status: Developer['status']) => {
         const s = statusMap[status]
-        return <Badge status={s.color as 'success' | 'processing' | 'error' | 'default' | 'warning'} text={s.text} />
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '4px 10px',
+            borderRadius: 12,
+            fontSize: 12,
+            fontWeight: 500,
+            background: s.bg,
+            color: s.color,
+          }}>
+            {status === 'APPROVED' && <CheckCircleOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+            {status === 'PENDING' && <AuditOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+            {status === 'REJECTED' && <CloseCircleOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+            {status === 'DISABLED' && <CloseCircleOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+            {s.text}
+          </span>
+        )
       },
     },
     { title: '注册时间', dataIndex: 'created_at', key: 'created_at', width: 170, render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-' },
@@ -516,7 +732,7 @@ const DeveloperManagement: React.FC = () => {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} title="编辑" />
           {record.status === 'PENDING' && (
             <>
-              <Button type="link" size="small" icon={<CheckCircleOutlined />} onClick={() => handleAudit(record, 'APPROVED')} title="审核通过" />
+              <Button type="link" size="small" icon={<CheckCircleOutlined style={{ color: colorPalette.success }} />} onClick={() => handleAudit(record, 'APPROVED')} title="审核通过" />
               <Button type="link" size="small" danger icon={<CloseCircleOutlined />} onClick={() => handleAudit(record, 'REJECTED')} title="审核拒绝" />
             </>
           )}
@@ -524,6 +740,9 @@ const DeveloperManagement: React.FC = () => {
             <Popconfirm title="确认禁用" description={`确定禁用开发人员 ${record.name} 吗？`} onConfirm={() => handleDisable(record)} okText="确认" cancelText="取消">
               <Button type="link" size="small" danger title="禁用">禁用</Button>
             </Popconfirm>
+          )}
+          {record.status === 'DISABLED' && (
+            <Button type="link" size="small" title="启用" onClick={() => handleEnable(record)}>启用</Button>
           )}
           <Popconfirm title="确认删除" description={`确定删除开发人员 ${record.name} 吗？`} onConfirm={() => handleDelete(record)} okText="确认" cancelText="取消">
             <Button type="link" size="small" danger icon={<DeleteOutlined />} title="删除" />
@@ -533,45 +752,47 @@ const DeveloperManagement: React.FC = () => {
     },
   ]
 
-  const skillColumns: ColumnsType<SkillTag> = [
-    { title: '技能名称', dataIndex: 'name', key: 'name', width: 150 },
-    { title: '所属分类', dataIndex: 'category', key: 'category', width: 150, render: (cat: string) => <Tag color="purple">{cat}</Tag> },
-    { title: '开发人员数', dataIndex: 'developer_count', key: 'developer_count', width: 120, render: (count: number) => <Badge count={count} showZero color="#1890ff" /> },
-    {
-      title: '操作',
-      key: 'action',
-      width: 150,
-      render: (_, record) => (
-        <Space size="small">
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditSkill(record)} />
-          <Popconfirm title="确认删除" description={`确定删除技能 "${record.name}" 吗？`} onConfirm={() => handleDeleteSkill(record)} okText="确认" cancelText="取消">
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-
   const evaluationColumns: ColumnsType<Evaluation> = [
-    { title: '评估人', dataIndex: 'evaluator_name', key: 'evaluator_name', width: 120 },
+    { title: '评估人', dataIndex: 'evaluator_name', key: 'evaluator_name', width: 100 },
     {
-      title: '评分',
+      title: '总体评分',
       dataIndex: 'score',
       key: 'score',
       width: 100,
       render: (score: number) => (
-        <span style={{ color: score >= 90 ? '#52c41a' : score >= 80 ? '#1890ff' : '#fa8c16', fontWeight: 600 }}>
+        <span style={{ color: score >= 90 ? colorPalette.success : score >= 80 ? colorPalette.primary : score >= 60 ? colorPalette.warning : colorPalette.error, fontWeight: 600 }}>
           {score}分
         </span>
       ),
+    },
+    {
+      title: '质量',
+      dataIndex: 'quality',
+      key: 'quality',
+      width: 70,
+      render: (v?: number) => v ? `${v}/5` : '-',
+    },
+    {
+      title: '响应',
+      dataIndex: 'response',
+      key: 'response',
+      width: 70,
+      render: (v?: number) => v ? `${v}/5` : '-',
+    },
+    {
+      title: '协作',
+      dataIndex: 'teamwork',
+      key: 'teamwork',
+      width: 70,
+      render: (v?: number) => v ? `${v}/5` : '-',
     },
     { title: '评价内容', dataIndex: 'comment', key: 'comment', ellipsis: true },
     { title: '评估时间', dataIndex: 'created_at', key: 'created_at', width: 120, render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-' },
   ]
 
   const trajectoryColorMap: Record<string, string> = {
-    '注册加入': 'green', '审核通过': 'blue', '审核拒绝': 'red', '任务分配': 'blue',
-    '任务完成': 'green', '技能提升': 'cyan', '绩效评估': 'orange', '项目完成': 'green', '禁用': 'red', '启用': 'green',
+    '注册加入': colorPalette.success, '审核通过': colorPalette.primary, '审核拒绝': colorPalette.error,
+    '任务分配': colorPalette.primary, '任务完成': colorPalette.success, '技能提升': '#06b6d4', '绩效评估': colorPalette.warning, '项目完成': colorPalette.success, '禁用': colorPalette.error, '启用': colorPalette.success,
   }
 
   const stats = {
@@ -581,104 +802,676 @@ const DeveloperManagement: React.FC = () => {
     skillCount: skillTags.length,
   }
 
+  const getInitials = (name: string) => name?.charAt(0) || '?'
+
+  const renderDeveloperCard = (dev: Developer, isDisabled = false) => {
+    const s = statusMap[dev.status]
+    return (
+      <div
+        key={dev.id}
+        style={{
+          background: colorPalette.card,
+          borderRadius: 14,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+          overflow: 'hidden',
+          transition: '200ms cubic-bezier(0.4, 0, 0.2, 1)',
+          cursor: 'pointer',
+          opacity: isDisabled ? 0.55 : 1,
+          filter: isDisabled ? 'grayscale(60%)' : 'none',
+        }}
+        onClick={() => handleViewDetail(dev)}
+        onMouseEnter={(e) => {
+          if (!isDisabled) {
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06)'
+            e.currentTarget.style.transform = 'translateY(-2px)'
+          }
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.04)'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
+      >
+        <div style={{ padding: 20, display: 'flex', alignItems: 'flex-start', gap: 16, borderBottom: `1px solid ${colorPalette.borderLight}` }}>
+          <div style={{
+            width: 56,
+            height: 56,
+            borderRadius: 10,
+            background: `linear-gradient(135deg, ${colorPalette.primary} 0%, #36c1fc 100%)`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontWeight: 600,
+            fontSize: 20,
+            flexShrink: 0,
+          }}>
+            {getInitials(dev.name)}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 4 }}>{dev.name}</div>
+            <div style={{ fontSize: 13, color: colorPalette.textSecondary, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dev.phone}>{dev.phone}</div>
+            <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dev.email}>{dev.email}</div>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '4px 10px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 500,
+              background: s.bg,
+              color: s.color,
+            }}>
+              {dev.status === 'APPROVED' && <CheckCircleOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+              {dev.status === 'PENDING' && <AuditOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+              {dev.status === 'REJECTED' && <CloseCircleOutlined style={{ marginRight: 4, fontSize: 10 }} />}
+              {s.text}
+            </span>
+          </div>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {dev.skills && dev.skills.length > 0 ? (
+              <>
+                {dev.skills.slice(0, 3).map(skill => (
+                  <span key={skill.skill_id} style={{
+                    padding: '4px 10px',
+                    background: colorPalette.primaryLight,
+                    color: colorPalette.primary,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 500,
+                  }}>
+                    {skill.skill_name}
+                  </span>
+                ))}
+                {dev.skills.length > 3 && (
+                  <span style={{
+                    padding: '4px 10px',
+                    background: colorPalette.borderLight,
+                    color: colorPalette.textSecondary,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 500,
+                  }}>
+                    +{dev.skills.length - 3}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{
+                padding: '4px 10px',
+                background: colorPalette.borderLight,
+                color: colorPalette.textMuted,
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+              }}>
+                暂无技能
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, paddingTop: 16, borderTop: `1px solid ${colorPalette.borderLight}` }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: colorPalette.textPrimary }}>{dev.work_years || 0}</div>
+              <div style={{ fontSize: 11, color: colorPalette.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>工作年限</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: colorPalette.textPrimary }}>{dev.skills?.length || 0}</div>
+              <div style={{ fontSize: 11, color: colorPalette.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>技能数</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: dev.latest_score ? (dev.latest_score >= 90 ? colorPalette.success : dev.latest_score >= 80 ? colorPalette.primary : dev.latest_score >= 60 ? colorPalette.warning : colorPalette.error) : colorPalette.textMuted }}>
+                {dev.latest_score ? `${dev.latest_score}` : '-'}
+              </div>
+              <div style={{ fontSize: 11, color: colorPalette.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 }}>评分</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: '16px 20px', background: colorPalette.bg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: colorPalette.textMuted }}>
+            <CalendarOutlined style={{ marginRight: 4 }} />
+            {dayjs(dev.created_at).format('YYYY-MM-DD')}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(dev)} title="查看详情" />
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(dev)} title="编辑" />
+            {dev.status === 'PENDING' && (
+              <>
+                <Button type="link" size="small" icon={<CheckCircleOutlined style={{ color: colorPalette.success }} />} onClick={() => handleAudit(dev, 'APPROVED')} title="审核通过" />
+                <Popconfirm title="确认拒绝" description={`确定拒绝开发人员 ${dev.name} 吗？`} onConfirm={() => handleAudit(dev, 'REJECTED')} okText="确认" cancelText="取消">
+                  <Button type="link" size="small" danger icon={<CloseCircleOutlined />} title="审核拒绝" />
+                </Popconfirm>
+              </>
+            )}
+            {dev.status === 'APPROVED' && (
+              <Popconfirm title="确认禁用" description={`确定禁用 ${dev.name} 吗？`} onConfirm={() => handleDisable(dev)} okText="确认" cancelText="取消">
+                <Button type="link" size="small" danger title="禁用">禁用</Button>
+              </Popconfirm>
+            )}
+            {dev.status === 'DISABLED' && (
+              <Button type="link" size="small" title="启用" onClick={() => handleEnable(dev)}>启用</Button>
+            )}
+            <Popconfirm title="确认删除" description={`确定删除 ${dev.name} 吗？`} onConfirm={() => handleDelete(dev)} okText="确认" cancelText="取消">
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} title="删除" />
+            </Popconfirm>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderSkillCard = (skill: SkillTag) => (
+    <div
+      key={skill.id}
+      style={{
+        background: colorPalette.card,
+        borderRadius: 10,
+        padding: 20,
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+        transition: '200ms cubic-bezier(0.4, 0, 0.2, 1)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06)'
+        e.currentTarget.style.transform = 'translateY(-2px)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.04)'
+        e.currentTarget.style.transform = 'translateY(0)'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          width: 44,
+          height: 44,
+          borderRadius: 6,
+          background: colorPalette.primaryLight,
+          color: colorPalette.primary,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <ToolOutlined style={{ fontSize: 18 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 2 }}>{skill.name}</div>
+          <div style={{ fontSize: 12, color: colorPalette.textMuted }}>{skill.category}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 20, fontWeight: 700, color: colorPalette.primary }}>{skill.developer_count}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEditSkill(skill)} style={{ color: colorPalette.textSecondary }} />
+          <Popconfirm title="确认删除" description={`确定删除技能 "${skill.name}" 吗？`} onConfirm={() => handleDeleteSkill(skill)}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </div>
+      </div>
+    </div>
+  )
+
+  const avatarColors = ['#1890ff', '#8b5cf6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4']
+  const avatarColor = avatarPreview.name
+    ? avatarColors[avatarPreview.name.charCodeAt(0) % avatarColors.length]
+    : '#475569'
+
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 20, marginBottom: 24, fontWeight: 600 }}>开发人员管理</h1>
+    <div style={{ padding: 28, maxWidth: 1400, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: colorPalette.textPrimary, letterSpacing: '-0.02em', marginBottom: 4 }}>开发人员管理</h1>
+          <p style={{ fontSize: 14, color: colorPalette.textSecondary }}>管理合作伙伴的开发人员资源，审核资质，追踪工作轨迹</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Upload beforeUpload={handleBatchImport} showUploadList={false} accept=".xlsx,.xls,.csv">
+            <Button icon={<UploadOutlined />}>批量导入</Button>
+          </Upload>
+          <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>下载模板</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>新建开发人员</Button>
+        </div>
+      </div>
 
-      <Tabs activeKey={activeTab} onChange={setActiveTab} type="card">
-        <TabPane tab={<span><TeamOutlined /> 开发人员列表</span>} key="list">
-          <Row gutter={16} style={{ marginBottom: 24 }}>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="总人数" value={stats.total} prefix={<TeamOutlined />} valueStyle={{ color: '#1890ff' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="待审核" value={stats.pending} prefix={<AuditOutlined />} valueStyle={{ color: '#faad14' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="已通过" value={stats.approved} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card size="small">
-                <Statistic title="技能数量" value={stats.skillCount} prefix={<ToolOutlined />} valueStyle={{ color: '#722ed1' }} />
-              </Card>
-            </Col>
-          </Row>
+      <div style={{ background: colorPalette.card, borderRadius: 14, boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)', overflow: 'hidden' }}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab} style={{ padding: '0 24px' }} tabBarStyle={{ marginBottom: 0 }}>
+          <TabPane tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><TeamOutlined /> 开发人员列表</span>} key="list">
+            <div style={{ padding: 24 }}>
+              <Row gutter={20} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card
+                    bordered={false}
+                    style={{ borderTop: `3px solid ${colorPalette.primary}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                    styles={{ body: { padding: 22 } }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.primaryLight, marginBottom: 16 }}>
+                      <TeamOutlined style={{ fontSize: 22, color: colorPalette.primary }} />
+                    </div>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginBottom: 6 }}>{stats.total}</div>
+                    <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>开发人员总数</div>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card
+                    bordered={false}
+                    style={{ borderTop: `3px solid ${colorPalette.warning}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                    styles={{ body: { padding: 22 } }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.warningLight, marginBottom: 16 }}>
+                      <AuditOutlined style={{ fontSize: 22, color: colorPalette.warning }} />
+                    </div>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginBottom: 6 }}>{stats.pending}</div>
+                    <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>待审核</div>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card
+                    bordered={false}
+                    style={{ borderTop: `3px solid ${colorPalette.success}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                    styles={{ body: { padding: 22 } }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.successLight, marginBottom: 16 }}>
+                      <CheckCircleOutlined style={{ fontSize: 22, color: colorPalette.success }} />
+                    </div>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginBottom: 6 }}>{stats.approved}</div>
+                    <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>已通过</div>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
+                  <Card
+                    bordered={false}
+                    style={{ borderTop: `3px solid ${colorPalette.purple}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+                    styles={{ body: { padding: 22 } }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: colorPalette.purpleLight, marginBottom: 16 }}>
+                      <ToolOutlined style={{ fontSize: 22, color: colorPalette.purple }} />
+                    </div>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: colorPalette.textPrimary, lineHeight: 1, marginBottom: 6 }}>{stats.skillCount}</div>
+                    <div style={{ fontSize: 13, color: colorPalette.textSecondary }}>技能数量</div>
+                  </Card>
+                </Col>
+              </Row>
 
-          <Space style={{ marginBottom: 16 }} wrap>
-            <Input placeholder="搜索姓名" prefix={<SearchOutlined />} value={filters.name} onChange={e => setFilters({ ...filters, name: e.target.value })} onPressEnter={handleSearch} style={{ width: 160 }} allowClear />
-            <TreeSelect placeholder="选择技能" style={{ width: 200 }} allowClear treeData={skillCategoryTree} value={filters.skill} onChange={v => setFilters({ ...filters, skill: v || undefined })} treeDefaultExpandAll />
-            <Select placeholder="选择合作伙伴" style={{ width: 180 }} allowClear value={filters.partner_id} onChange={v => setFilters({ ...filters, partner_id: v || undefined })}>
-              {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
-            </Select>
-            <Select placeholder="选择状态" style={{ width: 120 }} allowClear value={filters.status} onChange={v => setFilters({ ...filters, status: v || undefined })}>
-              <Select.Option value="PENDING">待审核</Select.Option>
-              <Select.Option value="APPROVED">已通过</Select.Option>
-              <Select.Option value="REJECTED">已拒绝</Select.Option>
-              <Select.Option value="DISABLED">已禁用</Select.Option>
-            </Select>
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>新建开发人员</Button>
-            <Upload beforeUpload={handleBatchImport} showUploadList={false} accept=".xlsx,.xls,.csv">
-              <Button icon={<UploadOutlined />}>批量导入</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>下载模板</Button>
-          </Space>
+              <div style={{ background: colorPalette.bg, borderRadius: 10, padding: 20, marginBottom: 20 }}>
+                <Space wrap size={12}>
+                  <Input
+                    placeholder="搜索姓名、手机或邮箱..."
+                    prefix={<SearchOutlined style={{ color: colorPalette.textMuted }} />}
+                    value={filters.name}
+                    onChange={e => {
+                      const newFilters = { ...filters, name: e.target.value };
+                      setFilters(newFilters);
+                      debouncedSearchDevelopers(newFilters);
+                    }}
+                    onPressEnter={() => handleSearch()}
+                    style={{ width: 240 }}
+                    allowClear
+                  />
+                  <Select
+                    placeholder="选择技能"
+                    style={{ width: 200 }}
+                    allowClear
+                    value={filters.skill}
+                    onChange={v => {
+                      const newFilters = { ...filters, skill: v || undefined };
+                      setFilters(newFilters);
+                      handleSearch(newFilters);
+                    }}
+                    showSearch
+                    filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())}
+                  >
+                    {skillStore.skills.map(s => <Select.Option key={s.id} value={s.id} label={s.name}>{s.name}</Select.Option>)}
+                  </Select>
+                  <Select
+                    placeholder="选择合作伙伴"
+                    style={{ width: 180 }}
+                    allowClear
+                    value={filters.partner_id}
+                    onChange={v => {
+                      const newFilters = { ...filters, partner_id: v || undefined };
+                      setFilters(newFilters);
+                      handleSearch(newFilters);
+                    }}
+                  >
+                    {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
+                  </Select>
+                  <Select
+                    placeholder="选择状态"
+                    style={{ width: 120 }}
+                    allowClear
+                    value={filters.status}
+                    onChange={v => {
+                      const newFilters = { ...filters, status: v || undefined };
+                      setFilters(newFilters);
+                      handleSearch(newFilters);
+                    }}
+                  >
+                    <Select.Option value="PENDING">待审核</Select.Option>
+                    <Select.Option value="APPROVED">已通过</Select.Option>
+                    <Select.Option value="REJECTED">已拒绝</Select.Option>
+                    <Select.Option value="DISABLED">已禁用</Select.Option>
+                  </Select>
+                  </Space>
+              </div>
 
-          <Table columns={columns} dataSource={developers} rowKey="id" loading={loading} pagination={pagination} onChange={handleTableChange} scroll={{ x: 1400 }} size="middle" />
-        </TabPane>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <span style={{ fontSize: 14, color: colorPalette.textSecondary }}>
+                  共 <strong style={{ color: colorPalette.textPrimary }}>{pagination.total || developers.length}</strong> 条结果
+                </span>
+                <Space>
+                  <span style={{ fontSize: 13, color: colorPalette.textMuted }}>视图：</span>
+                  <Space size={4}>
+                    <Button
+                      type={viewMode === 'grid' ? 'primary' : 'default'}
+                      icon={<AppstoreOutlined />}
+                      onClick={() => setViewMode('grid')}
+                      size="small"
+                    />
+                    <Button
+                      type={viewMode === 'table' ? 'primary' : 'default'}
+                      icon={<BarsOutlined />}
+                      onClick={() => setViewMode('table')}
+                      size="small"
+                    />
+                  </Space>
+                </Space>
+              </div>
 
-        <TabPane tab={<span><ToolOutlined /> 技能标签管理</span>} key="skills">
-          <Space style={{ marginBottom: 16 }}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSkill}>新建技能标签</Button>
-          </Space>
-          <Table columns={skillColumns} dataSource={skillTags} rowKey="id" loading={skillsLoading} pagination={{ pageSize: 10 }} size="middle" />
-        </TabPane>
-      </Tabs>
+              {(() => {
+                const statusOrder: Record<string, number> = { 'APPROVED': 0, 'PENDING': 1, 'REJECTED': 2, 'DISABLED': 3 }
+                const sorted = [...developers].sort((a, b) => (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99))
+                return viewMode === 'grid' ? (
+                  <Row gutter={[20, 20]}>
+                    {sorted.map(dev => (
+                      <Col key={dev.id} xs={24} sm={12} lg={8} xl={6}>
+                        {renderDeveloperCard(dev, dev.status === 'DISABLED')}
+                      </Col>
+                    ))}
+                  </Row>
+                ) : (
+                  <Table
+                    columns={columns}
+                    dataSource={sorted}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{ ...pagination, showSizeChanger: true, showQuickJumper: true, showTotal: (total: number) => `共 ${total} 条` }}
+                    onChange={handleTableChange}
+                    scroll={{ x: 1400 }}
+                    size="middle"
+                  />
+                )
+              })()}
 
-      <Modal title={editingDeveloper ? '编辑开发人员' : '新建开发人员'} open={modalVisible} onOk={handleSubmit} onCancel={() => setModalVisible(false)} width={640} okText={editingDeveloper ? '保存' : '创建'} cancelText="取消">
-        <Form form={form} layout="vertical" requiredMark="optional">
-          <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>
-            <Input placeholder="请输入姓名" maxLength={50} />
-          </Form.Item>
-          <Form.Item label="手机" name="phone" rules={[{ pattern: /^1[3-9]\d{9}$/, message: '请输入有效手机号' }]}>
-            <Input placeholder="请输入手机号" maxLength={11} />
-          </Form.Item>
-          <Form.Item label="邮箱" name="email" rules={[{ type: 'email', message: '请输入有效邮箱地址' }]}>
-            <Input placeholder="请输入邮箱" />
-          </Form.Item>
-          <Form.Item label="合作伙伴" name="partner_id" rules={[{ required: true, message: '请选择合作伙伴' }]}>
-            <Select placeholder="选择合作伙伴" allowClear>
-              {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
-            </Select>
-          </Form.Item>
-          <Form.Item label="工作经验（年）" name="work_years">
-            <InputNumber min={0} max={50} placeholder="请输入工作经验年限" style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item label="技能" name="skills">
+              {viewMode === 'grid' && developers.length === 0 && !loading && (
+                <Empty description="暂无开发人员数据" style={{ marginTop: 60, marginBottom: 60 }} />
+              )}
+            </div>
+          </TabPane>
+
+          <TabPane tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ToolOutlined /> 技能标签管理</span>} key="skills">
+            <div style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 14, color: colorPalette.textSecondary }}>
+                共 <strong style={{ color: colorPalette.textPrimary }}>{skillTags.length}</strong> 个技能标签
+              </span>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSkill}>新建技能标签</Button>
+            </div>
+            <Row gutter={[16, 16]} style={{ padding: '0 24px 24px' }}>
+              {skillTags.map(skill => (
+                <Col key={skill.id} xs={24} sm={12} lg={8} xl={6}>
+                  {renderSkillCard(skill)}
+                </Col>
+              ))}
+            </Row>
+            {skillTags.length === 0 && !skillsLoading && (
+              <Empty description="暂无技能标签" style={{ marginTop: 60, marginBottom: 60 }} />
+            )}
+          </TabPane>
+        </Tabs>
+      </div>
+
+      <Modal
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        width={680}
+        footer={null}
+        styles={{ body: { padding: 0 }, wrapper: { overflow: 'hidden' } }}
+      >
+        <div style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          padding: '24px 24px 0 24px',
+          position: 'relative',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <span style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 600 }}>
+              {editingDeveloper ? '编辑开发人员' : '新建开发人员'}
+            </span>
+            <button
+              onClick={() => setModalVisible(false)}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: 'none',
+                borderRadius: 6,
+                width: 28,
+                height: 28,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#94a3b8',
+                fontSize: 16,
+                lineHeight: 1,
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 20 }}>
+            <div style={{
+              width: 52,
+              height: 52,
+              borderRadius: '50%',
+              background: avatarPreview.name
+                ? `linear-gradient(135deg, ${avatarColor}, ${avatarColor}dd)`
+                : 'linear-gradient(135deg, #334155, #475569)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 20,
+              fontWeight: 700,
+              color: '#ffffff',
+              flexShrink: 0,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              border: '2px solid rgba(255,255,255,0.15)',
+            }}>
+              {avatarPreview.name ? avatarPreview.name.charAt(0).toUpperCase() : <UserOutlined style={{ color: '#94a3b8' }} />}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#f8fafc', fontSize: 15, fontWeight: 600, fontFamily: 'inherit' }}>
+                {avatarPreview.name || '待填写姓名'}
+              </span>
+              <span style={{ color: '#94a3b8', fontSize: 13 }}>
+                {avatarPreview.phone || '待填写手机号'}
+              </span>
+            </div>
+
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              {editingDeveloper && (
+                <span style={{
+                  background: editingDeveloper.status === 'APPROVED'
+                    ? 'rgba(34,197,94,0.15)'
+                    : editingDeveloper.status === 'PENDING'
+                    ? 'rgba(245,158,11,0.15)'
+                    : 'rgba(239,68,68,0.15)',
+                  color: editingDeveloper.status === 'APPROVED'
+                    ? '#22c55e'
+                    : editingDeveloper.status === 'PENDING'
+                    ? '#f59e0b'
+                    : '#ef4444',
+                  border: `1px solid ${editingDeveloper.status === 'APPROVED'
+                    ? 'rgba(34,197,94,0.3)'
+                    : editingDeveloper.status === 'PENDING'
+                    ? 'rgba(245,158,11,0.3)'
+                    : 'rgba(239,68,68,0.3)'}`,
+                  borderRadius: 20,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}>
+                  {editingDeveloper.status === 'APPROVED' ? '已认证' : editingDeveloper.status === 'PENDING' ? '待审核' : editingDeveloper.status === 'REJECTED' ? '已拒绝' : '已禁用'}
+                </span>
+              )}
+              {!editingDeveloper && (
+                <span style={{
+                  background: 'rgba(245,158,11,0.15)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                  borderRadius: 20,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}>
+                  新建
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark="optional"
+          style={{ padding: '20px 24px' }}
+          onValuesChange={(_changed, all) => {
+            setAvatarPreview({ name: all.name || '', phone: all.phone || '' })
+          }}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 20px' }}>
+            <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>
+              <Input placeholder="请输入姓名" maxLength={50} prefix={<UserOutlined style={{ color: colorPalette.textMuted }} />} />
+            </Form.Item>
+            <Form.Item label="手机号码" name="phone" rules={[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '请输入有效手机号' }]}>
+              <Input placeholder="请输入手机号" maxLength={11} prefix={<PhoneOutlined style={{ color: colorPalette.textMuted }} />} />
+            </Form.Item>
+            <Form.Item label="邮箱" name="email" rules={[{ required: true, message: '请输入邮箱' }, { type: 'email', message: '请输入有效邮箱地址' }]}>
+              <Input placeholder="请输入邮箱" prefix={<MailOutlined style={{ color: colorPalette.textMuted }} />} />
+            </Form.Item>
+            <Form.Item label="所属合作伙伴" name="partner_id" rules={[{ required: true, message: '请选择合作伙伴' }]}>
+              <Select placeholder="选择合作伙伴" allowClear>
+                {partners.map(p => <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>)}
+              </Select>
+            </Form.Item>
+            <Form.Item label="工作年限" name="work_years" style={{ gridColumn: '1 / -1' }}>
+              <InputNumber min={0} max={50} placeholder="请输入工作经验年限" style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+
+          <Form.Item label="技能标签" name="skills" style={{ marginTop: 4 }}>
             <Select
               mode="multiple"
               placeholder="选择技能（可多选）"
               allowClear
               showSearch
               filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())}
-              options={skillCategoryTree.flatMap(cat =>
-                (cat.children || []).map(s => ({ value: s.value, label: `${s.title} - ${cat.title}` }))
-              )}
+              options={skillStore.skills.map(s => ({ value: s.id, label: `${s.name} (${s.category})` }))}
+              style={{ width: '100%' }}
+              onChange={val => setModalSelectedSkills(val as number[])}
+              value={modalSelectedSkills}
             />
           </Form.Item>
+
+          {modalSelectedSkills.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginTop: 4,
+              marginBottom: 16,
+            }}>
+              {modalSelectedSkills.map(id => {
+                const skill = skillStore.skills.find(s => s.id === id)
+                if (!skill) return null
+                const pillColor = getSkillColor(skill.category)
+                return (
+                  <span
+                    key={id}
+                    style={{
+                      background: pillColor.bg,
+                      color: pillColor.text,
+                      border: `1px solid ${pillColor.border}`,
+                      borderRadius: 20,
+                      padding: '2px 10px',
+                      fontSize: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    {skill.name}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8, paddingTop: 16, borderTop: `1px solid ${colorPalette.border}` }}>
+            <button
+              onClick={() => setModalVisible(false)}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${colorPalette.border}`,
+                borderRadius: 6,
+                color: colorPalette.textSecondary,
+                fontSize: 14,
+                fontWeight: 500,
+                padding: '6px 20px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = colorPalette.borderLight)}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSubmit}
+              style={{
+                background: colorPalette.primary,
+                border: 'none',
+                borderRadius: 6,
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 500,
+                padding: '6px 20px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = colorPalette.primaryHover)}
+              onMouseLeave={e => (e.currentTarget.style.background = colorPalette.primary)}
+            >
+              {editingDeveloper ? '保存' : '创建'}
+            </button>
+          </div>
         </Form>
       </Modal>
 
-      <Modal title={editingSkill ? '编辑技能标签' : '新建技能标签'} open={skillModalVisible} onOk={handleSkillSubmit} onCancel={() => setSkillModalVisible(false)} width={480} okText={editingSkill ? '保存' : '创建'} cancelText="取消">
-        <Form form={skillForm} layout="vertical" requiredMark="optional">
+      <Modal
+        title={editingSkill ? '编辑技能标签' : '新建技能标签'}
+        open={skillModalVisible}
+        onOk={handleSkillSubmit}
+        onCancel={() => setSkillModalVisible(false)}
+        width={480}
+        okText={editingSkill ? '保存' : '创建'}
+        cancelText="取消"
+      >
+        <Form form={skillForm} layout="vertical" requiredMark="optional" style={{ marginTop: 20 }}>
           <Form.Item label="技能名称" name="name" rules={[{ required: true, message: '请输入技能名称' }]}>
-            <Input placeholder="请输入技能名称" maxLength={50} />
+            <Input placeholder="请输入技能名称" maxLength={50} prefix={<ToolOutlined style={{ color: colorPalette.textMuted }} />} />
           </Form.Item>
           <Form.Item label="所属分类" name="category" rules={[{ required: true, message: '请选择所属分类' }]}>
             <Select placeholder="选择所属分类">
@@ -688,71 +1481,198 @@ const DeveloperManagement: React.FC = () => {
         </Form>
       </Modal>
 
+      <Modal
+        title="添加绩效评估"
+        open={evaluationModalVisible}
+        onOk={handleCreateEvaluation}
+        onCancel={() => setEvaluationModalVisible(false)}
+        width={520}
+        okText="提交评估"
+        cancelText="取消"
+      >
+        <Form form={evaluationForm} layout="vertical" requiredMark="optional" style={{ marginTop: 20 }}>
+          <Form.Item label="总体评分 (1-100)" name="score" rules={[{ required: true, message: '请输入评分' }, { type: 'number', min: 1, max: 100, message: '评分必须在1-100之间' }]}>
+            <InputNumber min={1} max={100} placeholder="请输入1-100的评分" style={{ width: '100%' }} />
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <Form.Item label="质量 (1-5)" name="quality" extra="任务完成质量">
+              <InputNumber min={1} max={5} placeholder="1-5" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="响应 (1-5)" name="response" extra="响应速度">
+              <InputNumber min={1} max={5} placeholder="1-5" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item label="协作 (1-5)" name="teamwork" extra="团队协作能力">
+              <InputNumber min={1} max={5} placeholder="1-5" style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+          <Form.Item label="评估内容" name="comment">
+            <Input.TextArea rows={3} placeholder="请输入评估内容（可选）" maxLength={500} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Drawer
         title="开发人员详情"
         open={detailVisible}
         onClose={() => setDetailVisible(false)}
-        width={720}
+        width={600}
+        styles={{ header: { borderBottom: `1px solid ${colorPalette.borderLight}`, padding: '20px 24px' }, body: { padding: 24 } }}
         extra={
           selectedDeveloper && (
-            <Space>
-              <Button type="primary" icon={<EditOutlined />} onClick={() => { setDetailVisible(false); handleEdit(selectedDeveloper) }}>编辑</Button>
-            </Space>
+            <Button type="primary" icon={<EditOutlined />} onClick={() => { setDetailVisible(false); handleEdit(selectedDeveloper) }}>编辑</Button>
           )
         }
       >
         {selectedDeveloper && (
           <Tabs activeKey={detailTab} onChange={setDetailTab}>
             <TabPane tab="基本信息" key="basic">
-              <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="姓名" span={1}><strong>{selectedDeveloper.name}</strong></Descriptions.Item>
-                <Descriptions.Item label="状态" span={1}>
-                  <Badge status={statusMap[selectedDeveloper.status].color as 'success' | 'processing' | 'error' | 'default' | 'warning'} text={statusMap[selectedDeveloper.status].text} />
-                </Descriptions.Item>
-                <Descriptions.Item label="手机" span={1}>{selectedDeveloper.phone || '-'}</Descriptions.Item>
-                <Descriptions.Item label="邮箱" span={1}>{selectedDeveloper.email || '-'}</Descriptions.Item>
-                <Descriptions.Item label="合作伙伴" span={1}>{selectedDeveloper.partner_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="工作经验" span={1}>{selectedDeveloper.work_years || 0}年</Descriptions.Item>
-                <Descriptions.Item label="注册时间" span={1}>{selectedDeveloper.created_at ? dayjs(selectedDeveloper.created_at).format('YYYY-MM-DD HH:mm') : '-'}</Descriptions.Item>
-                <Descriptions.Item label="更新时间" span={1}>{selectedDeveloper.updated_at ? dayjs(selectedDeveloper.updated_at).format('YYYY-MM-DD HH:mm') : '-'}</Descriptions.Item>
-                <Descriptions.Item label="技能" span={2}>
-                  <Space wrap size={[4, 4]}>
-                    {selectedDeveloper.skills?.map(s => <Tag key={s.skill_id} color="blue">{s.skill_name}</Tag>)}
-                    {(!selectedDeveloper.skills || selectedDeveloper.skills.length === 0) && '-'}
-                  </Space>
-                </Descriptions.Item>
-                {selectedDeveloper.audit_comment && (
-                  <Descriptions.Item label="审核备注" span={2}>{selectedDeveloper.audit_comment}</Descriptions.Item>
-                )}
-              </Descriptions>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 28 }}>
+                <div style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 12,
+                  background: `linear-gradient(135deg, ${colorPalette.primary} 0%, #36c1fc 100%)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: 600,
+                  fontSize: 28,
+                }}>
+                  {getInitials(selectedDeveloper.name)}
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>{selectedDeveloper.name}</h3>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    background: statusMap[selectedDeveloper.status].bg,
+                    color: statusMap[selectedDeveloper.status].color,
+                  }}>
+                    {statusMap[selectedDeveloper.status].text}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 28 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${colorPalette.borderLight}` }}>基本信息</h4>
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>手机号码</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.phone || '-'}</div>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>邮箱</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.email || '-'}</div>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>所属合作伙伴</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.partner_name || '-'}</div>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>工作年限</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.work_years || 0} 年</div>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>注册时间</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.created_at ? dayjs(selectedDeveloper.created_at).format('YYYY-MM-DD HH:mm') : '-'}</div>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ padding: 14, background: colorPalette.bg, borderRadius: 6 }}>
+                      <div style={{ fontSize: 12, color: colorPalette.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>更新时间</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: colorPalette.textPrimary }}>{selectedDeveloper.updated_at ? dayjs(selectedDeveloper.updated_at).format('YYYY-MM-DD HH:mm') : '-'}</div>
+                    </div>
+                  </Col>
+                </Row>
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${colorPalette.borderLight}` }}>技能标签</h4>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {selectedDeveloper.skills && selectedDeveloper.skills.length > 0 ? (
+                    selectedDeveloper.skills.map(skill => (
+                      <span key={skill.skill_id} style={{
+                        padding: '6px 12px',
+                        background: colorPalette.primaryLight,
+                        color: colorPalette.primary,
+                        borderRadius: 6,
+                        fontSize: 13,
+                        fontWeight: 500,
+                      }}>
+                        {skill.skill_name} · {skill.proficiency}
+                      </span>
+                    ))
+                  ) : (
+                    <span style={{ color: colorPalette.textMuted }}>暂无技能</span>
+                  )}
+                </div>
+              </div>
+
+              {selectedDeveloper.audit_comment && (
+                <div style={{ padding: 16, background: colorPalette.warningLight, borderRadius: 8, borderLeft: `3px solid ${colorPalette.warning}` }}>
+                  <div style={{ fontSize: 12, color: colorPalette.warning, fontWeight: 600, marginBottom: 4 }}>审核备注</div>
+                  <div style={{ fontSize: 14, color: colorPalette.textPrimary }}>{selectedDeveloper.audit_comment}</div>
+                </div>
+              )}
+
               {selectedDeveloper.status === 'PENDING' && (
-                <Card size="small" title="待审核操作">
+                <div style={{ marginTop: 24, padding: 16, background: colorPalette.bg, borderRadius: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>待审核操作</div>
                   <Space>
                     <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => handleAudit(selectedDeveloper, 'APPROVED')}>审核通过</Button>
                     <Button danger icon={<CloseCircleOutlined />} onClick={() => handleAudit(selectedDeveloper, 'REJECTED')}>审核拒绝</Button>
                   </Space>
-                </Card>
+                </div>
+              )}
+
+              {selectedDeveloper.status === 'DISABLED' && (
+                <div style={{ marginTop: 24, padding: 16, background: colorPalette.bg, borderRadius: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>账号状态</div>
+                  <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => { handleEnable(selectedDeveloper); setDetailVisible(false); }}>重新启用</Button>
+                </div>
               )}
             </TabPane>
+
             <TabPane tab="工作轨迹" key="trajectory">
               <Timeline
                 mode="left"
                 items={trajectory.map(t => ({
-                  color: trajectoryColorMap[t.event_type] || 'blue',
+                  color: trajectoryColorMap[t.event_type] || colorPalette.primary,
                   label: dayjs(t.event_time).format('YYYY-MM-DD'),
                   children: (
                     <div>
                       <strong style={{ fontSize: 14 }}>{t.event_type}</strong>
-                      <p style={{ margin: '4px 0 8px', color: '#333' }}>{t.description}</p>
+                      <p style={{ margin: '4px 0 8px', color: colorPalette.textSecondary }}>{t.description}</p>
                       {t.task_name && <Tag color="purple">{t.task_name}</Tag>}
-                      {t.operator && <span style={{ marginLeft: 8, color: '#888', fontSize: 12 }}>操作人: {t.operator}</span>}
+                      {t.operator && <span style={{ marginLeft: 8, color: colorPalette.textMuted, fontSize: 12 }}>操作人: {t.operator}</span>}
                     </div>
                   ),
                 }))}
               />
               {trajectory.length === 0 && !trajectoryLoading && <Empty description="暂无工作轨迹记录" style={{ marginTop: 40 }} />}
             </TabPane>
-            <TabPane tab="绩效评估" key="evaluations">
+
+            <TabPane
+              tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><AuditOutlined /> 绩效评估</span>}
+              key="evaluations"
+            >
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenEvaluationModal} size="small">添加评估</Button>
+              </div>
               <Table columns={evaluationColumns} dataSource={evaluations} rowKey="id" loading={evaluationsLoading} pagination={{ pageSize: 5 }} size="small" locale={{ emptyText: '暂无绩效评估记录' }} />
             </TabPane>
           </Tabs>

@@ -116,6 +116,8 @@ model Partner {
   improvementNeeds ImprovementNeed[]
   improvementPlans ImprovementPlan[]
   riskEntries  RiskEntry[]
+  assessmentPlans  AssessmentPlan[]
+  assessmentReports AssessmentReport[]
 
   @@map("partners")
 }
@@ -196,7 +198,7 @@ model DeveloperEvaluation {
   developerId Int      @map("developer_id")
   evaluatorId Int      @map("evaluator_id")
   taskId      Int?     @map("task_id")
-  score       Int      // 1-5
+  score       Int      // 1-100 总体评分
   quality     Int?     // 任务完成质量 1-5
   response    Int?     // 响应速度 1-5
   teamwork    Int?     // 协作能力 1-5
@@ -371,6 +373,8 @@ model AssessmentPlan {
 
   indicatorIds Json      @map("indicator_ids") // [1,2,3] selected indicators
 
+  partner      Partner   @relation(fields: [partnerId], references: [id])
+
   @@index([partnerId])
   @@map("assessment_plans")
 }
@@ -421,6 +425,8 @@ model AssessmentReport {
   approvedAt  DateTime? @map("approved_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   publishedAt DateTime? @map("published_at")
+
+  partner     Partner   @relation(fields: [partnerId], references: [id])
 
   @@index([partnerId])
   @@map("assessment_reports")

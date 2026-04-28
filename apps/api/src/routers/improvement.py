@@ -58,18 +58,18 @@ def _need_to_response(need) -> dict:
 
     return {
         'id': need.id,
-        'partner_id': need.partner_id,
+        'partner_id': need.partnerId,
         'partner_name': partner_name,
         'source': getattr(need, 'source', 'manual'),
-        'source_id': getattr(need, 'source_id', None),
+        'source_id': getattr(need, 'sourceId', None),
         'source_name': None,
         'title': need.title,
         'description': getattr(need, 'description', None),
         'target': getattr(need, 'target', None),
         'deadline': need.deadline.isoformat() if hasattr(need, 'deadline') and need.deadline else None,
         'status': need.status,
-        'created_at': need.created_at.isoformat() if hasattr(need, 'created_at') and need.created_at else None,
-        'updated_at': need.updated_at.isoformat() if hasattr(need, 'updated_at') and need.updated_at else None,
+        'created_at': need.createdAt.isoformat() if hasattr(need, 'createdAt') and need.createdAt else None,
+        'updated_at': need.updatedAt.isoformat() if hasattr(need, 'updatedAt') and need.updatedAt else None,
     }
 
 
@@ -79,15 +79,27 @@ async def list_needs(status: Optional[str] = None, partner_id: Optional[int] = N
     if status:
         where["status"] = status
     if partner_id:
-        where["partner_id"] = partner_id
+        where["partnerId"] = partner_id
     needs = await db.improvementneed.find_many(where=where, include={'partner': True})
     return [_need_to_response(n) for n in needs]
 
 
 @router.post("/needs", response_model=ImprovementNeedResponse, status_code=201)
 async def create_need(need: ImprovementNeedCreate):
-    created = await db.improvementneed.create(data=need.model_dump())
-    return _need_to_response(created)
+    data = {
+        "title": need.title,
+        "description": need.description,
+        "target": need.target,
+        "partnerId": need.partner_id,
+        "priority": need.priority,
+        "status": need.status,
+        "source": "manual",
+    }
+    created = await db.improvementneed.create(data=data)
+    need_with_rel = await db.improvementneed.find_unique(
+        where={"id": created.id}, include={'partner': True}
+    )
+    return _need_to_response(need_with_rel)
 
 
 @router.get("/needs/{need_id}", response_model=ImprovementNeedResponse)
@@ -140,25 +152,27 @@ def _plan_to_response(plan) -> dict:
         developer_name = plan.developer.name
 
     need_title = None
+    if hasattr(plan, 'need') and plan.need:
+        need_title = plan.need.title
 
     return {
         'id': plan.id,
-        'need_id': plan.need_id,
+        'need_id': plan.needId,
         'need_title': need_title,
-        'partner_id': plan.partner_id,
+        'partner_id': plan.partnerId,
         'partner_name': partner_name,
-        'developer_id': getattr(plan, 'developer_id', None),
+        'developer_id': getattr(plan, 'developerId', None),
         'developer_name': developer_name,
         'title': plan.title,
         'measures': getattr(plan, 'measures', None),
-        'start_date': plan.start_date.isoformat() if hasattr(plan, 'start_date') and plan.start_date else None,
-        'end_date': plan.end_date.isoformat() if hasattr(plan, 'end_date') and plan.end_date else None,
+        'start_date': plan.startDate.isoformat() if hasattr(plan, 'startDate') and plan.startDate else None,
+        'end_date': plan.endDate.isoformat() if hasattr(plan, 'endDate') and plan.endDate else None,
         'status': plan.status,
         'progress': 0,
         'deliverables': None,
-        'approval_comment': getattr(plan, 'adjustment_note', None),
-        'created_at': plan.created_at.isoformat() if hasattr(plan, 'created_at') and plan.created_at else None,
-        'updated_at': plan.updated_at.isoformat() if hasattr(plan, 'updated_at') and plan.updated_at else None,
+        'approval_comment': getattr(plan, 'adjustmentNote', None),
+        'created_at': plan.createdAt.isoformat() if hasattr(plan, 'createdAt') and plan.createdAt else None,
+        'updated_at': plan.updatedAt.isoformat() if hasattr(plan, 'updatedAt') and plan.updatedAt else None,
     }
 
 
@@ -166,19 +180,52 @@ def _plan_to_response(plan) -> dict:
 async def list_plans(need_id: Optional[int] = None, status: Optional[str] = None):
     where = {}
     if need_id:
-        where["need_id"] = need_id
+        where["needId"] = need_id
     if status:
         where["status"] = status
     plans = await db.improvementplan.find_many(
-        where=where, include={'partner': True, 'developer': True}
+        where=where, include={'partner': True, 'developer': True, 'need': True}
     )
     return [_plan_to_response(p) for p in plans]
 
 
 @router.post("/plans", response_model=ImprovementPlanResponse, status_code=201)
 async def create_plan(plan: ImprovementPlanCreate):
-    created = await db.improvementplan.create(data=plan.model_dump())
-    return _plan_to_response(created)
+    data = {
+        "needId": plan.need_id,
+        "partnerId": plan.partner_id,
+        "title": plan.title,
+        "measures": plan.measures,
+        "startDate": plan.start_date,
+        "endDate": plan.end_date,
+        "developerId": plan.developer_id,
+    }
+    created = await db.improvementplan.create(data=data)
+    plan_with_rel = await db.improvementplan.find_unique(
+        where={"id": plan_id}, include={'partner': True, 'developer': True, 'need': True}
+    )
+    return _plan_to_response(plan_with_rel)
+
+
+@router.get("/timeline")
+async def get_timeline():
+    plans = await db.improvementplan.find_many(
+        include={'partner': True, 'developer': True, 'need': True},
+        order=[{"createdAt": "desc"}],
+        take=50
+    )
+    events = []
+    for p in plans:
+        events.append({
+            'id': p.id,
+            'event_type': 'plan_created',
+            'title': p.title,
+            'description': p.measures,
+            'status': p.status,
+            'partner_name': p.partner.name if hasattr(p, 'partner') and p.partner else None,
+            'created_at': p.createdAt.isoformat() if p.createdAt else None,
+        })
+    return events
 
 
 @router.get("/plans/{plan_id}", response_model=ImprovementPlanResponse)
@@ -303,7 +350,10 @@ async def reject_plan(plan_id: int, reason: str):
         where={"id": plan_id},
         data={"status": "REJECTED"}
     )
-    return _plan_to_response(updated)
+    plan_with_rel = await db.improvementplan.find_unique(
+        where={"id": plan_id}, include={'partner': True, 'developer': True, 'need': True}
+    )
+    return _plan_to_response(plan_with_rel)
 
 
 @router.post("/plans/{plan_id}/adjust")
@@ -312,7 +362,10 @@ async def adjust_plan(plan_id: int, adjustment_note: str):
         where={"id": plan_id},
         data={
             "status": "PENDING_AUDIT",
-            "adjustment_note": adjustment_note
+            "adjustmentNote": adjustment_note
         }
     )
-    return _plan_to_response(updated)
+    plan_with_rel = await db.improvementplan.find_unique(
+        where={"id": plan_id}, include={'partner': True, 'developer': True, 'need': True}
+    )
+    return _plan_to_response(plan_with_rel)

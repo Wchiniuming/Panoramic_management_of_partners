@@ -127,13 +127,13 @@ def _plan_to_response(plan) -> dict:
     return {
         'id': plan.id,
         'name': plan.name,
-        'partner_id': plan.partner_id,
+        'partner_id': plan.partnerId,
         'partner_name': partner_name,
-        'period_type': getattr(plan, 'period_type', 'quarterly'),
-        'start_date': plan.start_date.isoformat() if hasattr(plan, 'start_date') and plan.start_date else None,
-        'end_date': plan.end_date.isoformat() if hasattr(plan, 'end_date') and plan.end_date else None,
+        'period_type': getattr(plan, 'periodType', 'quarterly'),
+        'start_date': plan.startDate.isoformat() if hasattr(plan, 'startDate') and plan.startDate else None,
+        'end_date': plan.endDate.isoformat() if hasattr(plan, 'endDate') and plan.endDate else None,
         'status': plan.status,
-        'total_score': float(plan.total_score) if hasattr(plan, 'total_score') and plan.total_score else None,
+        'total_score': float(plan.totalScore) if hasattr(plan, 'totalScore') and plan.totalScore else None,
         'indicator_ids': indicator_ids,
     }
 
@@ -142,14 +142,23 @@ def _plan_to_response(plan) -> dict:
 async def list_plans(partner_id: Optional[int] = None):
     where = {}
     if partner_id:
-        where["partner_id"] = partner_id
-    plans = await db.assessmentplan.find_many(where=where)
+        where["partnerId"] = partner_id
+    plans = await db.assessmentplan.find_many(where=where, include={'partner': True})
     return [_plan_to_response(p) for p in plans]
 
 
 @router.post("/plans", response_model=PlanResponse, status_code=201)
 async def create_plan(plan: PlanCreate):
-    created = await db.assessmentplan.create(data={**plan.model_dump(), "evaluator_id": 1})
+    data = {
+        "name": plan.name,
+        "partnerId": plan.partner_id,
+        "periodType": plan.period_type,
+        "startDate": plan.start_date,
+        "endDate": plan.end_date,
+        "indicatorIds": plan.indicator_ids,
+        "evaluatorId": 1,
+    }
+    created = await db.assessmentplan.create(data=data)
     return _plan_to_response(created)
 
 
@@ -203,13 +212,13 @@ def _report_to_response(report) -> dict:
 
     return {
         'id': report.id,
-        'plan_id': getattr(report, 'plan_id', 0),
-        'partner_id': report.partner_id,
+        'plan_id': getattr(report, 'planId', 0),
+        'partner_id': report.partnerId,
         'partner_name': partner_name,
-        'total_score': float(report.total_score) if hasattr(report, 'total_score') and report.total_score else 0,
+        'total_score': float(report.totalScore) if hasattr(report, 'totalScore') and report.totalScore else 0,
         'level': getattr(report, 'level', 'B'),
         'status': getattr(report, 'status', 'DRAFT'),
-        'created_at': report.created_at.isoformat() if hasattr(report, 'created_at') and report.created_at else None,
+        'created_at': report.createdAt.isoformat() if hasattr(report, 'createdAt') and report.createdAt else None,
         'scores': scores,
         'strengths': None,
         'weaknesses': None,
@@ -221,14 +230,19 @@ def _report_to_response(report) -> dict:
 async def list_reports(partner_id: Optional[int] = None):
     where = {}
     if partner_id:
-        where["partner_id"] = partner_id
-    reports = await db.assessmentreport.find_many(where=where)
+        where["partnerId"] = partner_id
+    reports = await db.assessmentreport.find_many(where=where, include={'partner': True})
     return [_report_to_response(r) for r in reports]
 
 
 @router.post("/reports", response_model=ReportResponse, status_code=201)
 async def create_report(report: ReportCreate):
-    created = await db.assessmentreport.create(data={**report.model_dump(), "content": {}})
+    data = {
+        "planId": report.plan_id,
+        "partnerId": report.partner_id,
+        "totalScore": report.total_score,
+    }
+    created = await db.assessmentreport.create(data=data)
     return _report_to_response(created)
 
 
@@ -268,8 +282,9 @@ async def execute_plan(plan_id: int):
 @router.get("/partners/{partner_id}/history")
 async def get_partner_history(partner_id: int):
     reports = await db.assessmentreport.find_many(
-        where={"partner_id": partner_id},
-        order=[{"created_at": "desc"}]
+        where={"partnerId": partner_id},
+        order=[{"createdAt": "desc"}],
+        include={'partner': True}
     )
     return [_report_to_response(r) for r in reports]
 

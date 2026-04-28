@@ -1,8 +1,9 @@
 import React from 'react'
-import { Layout, Avatar, Dropdown, Badge, Space } from 'antd'
-import { BellOutlined, UserOutlined, LogoutOutlined, SettingOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
+import { Layout, Avatar, Dropdown, Space } from 'antd'
+import { UserOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { useAuthStore } from '@/stores/authStore'
+import dayjs from 'dayjs'
 
 interface HeaderProps {
   collapsed: boolean
@@ -14,9 +15,6 @@ const Header: React.FC<HeaderProps> = ({ collapsed, toggle, onLogout }) => {
   const user = useAuthStore((state) => state.user)
 
   const menuItems: MenuProps['items'] = [
-    { key: 'profile', icon: <UserOutlined />, label: '个人中心' },
-    { key: 'settings', icon: <SettingOutlined />, label: '设置' },
-    { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录' },
   ]
 
@@ -48,9 +46,9 @@ const Header: React.FC<HeaderProps> = ({ collapsed, toggle, onLogout }) => {
         {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
       </span>
       <Space size="large">
-        <Badge count={5} size="small">
-          <BellOutlined style={{ fontSize: 18, cursor: 'pointer' }} />
-        </Badge>
+        <span style={{ fontSize: 14, color: '#64748b' }}>
+          欢迎 <span style={{ color: '#0f172a', fontWeight: 500 }}>{user?.username || '用户'}</span> · {dayjs().format('YYYY年MM月DD日')}
+        </span>
         <Dropdown
           menu={{ items: menuItems, onClick: handleMenuClick }}
           placement="bottomRight"
@@ -58,7 +56,6 @@ const Header: React.FC<HeaderProps> = ({ collapsed, toggle, onLogout }) => {
         >
           <Space style={{ cursor: 'pointer' }}>
             <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1677ff' }} />
-            <span>{user?.username || '用户'}</span>
           </Space>
         </Dropdown>
       </Space>

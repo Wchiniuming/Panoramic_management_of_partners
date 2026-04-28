@@ -9,6 +9,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   logout: () => void
   setToken: (token: string) => void
+  fetchUser: () => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -33,5 +34,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   setToken: (token: string) => {
     localStorage.setItem('access_token', token)
     set({ token, isAuthenticated: true })
+  },
+
+  fetchUser: async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+    try {
+      const res = await apiClient.get('/auth/me')
+      set({ user: res.data, isAuthenticated: true })
+    } catch {
+      localStorage.removeItem('access_token')
+      set({ user: null, token: null, isAuthenticated: false })
+    }
   },
 }))
