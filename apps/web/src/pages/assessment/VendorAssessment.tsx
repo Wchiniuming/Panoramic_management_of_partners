@@ -218,7 +218,7 @@ const getMockReports = (partners: Partner[]): AssessmentReport[] => [
 ]
 
 const VendorAssessment: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('indicators')
+  const [activeTab, setActiveTab] = useState('plans')
   const [indicators, setIndicators] = useState<Indicator[]>([])
   const [plans, setPlans] = useState<AssessmentPlan[]>([])
   const [reports, setReports] = useState<AssessmentReport[]>([])
@@ -235,6 +235,7 @@ const VendorAssessment: React.FC = () => {
   const [executionPlan, setExecutionPlan] = useState<AssessmentPlan | null>(null)
   const [executionScores, setExecutionScores] = useState<Record<number, number>>({})
   const [executionComments, setExecutionComments] = useState<Record<number, string>>({})
+  const [executionSWSC, setExecutionSWSC] = useState({ strengths: '', weaknesses: '', suggestions: '' })
   const [reportDetailVisible, setReportDetailVisible] = useState(false)
   const [selectedReport, setSelectedReport] = useState<AssessmentReport | null>(null)
   const [auditComment, setAuditComment] = useState('')
@@ -385,9 +386,26 @@ const VendorAssessment: React.FC = () => {
   }
 
   const handleWizardFinish = async () => {
+    if (!wizardData.name) {
+      message.error('请输入计划名称')
+      return
+    }
+    if (!wizardData.partner_id) {
+      message.error('请选择合作伙伴')
+      return
+    }
+    if (!wizardData.indicator_ids || wizardData.indicator_ids.length === 0) {
+      message.error('请选择至少一个评估指标')
+      return
+    }
     try {
       await apiClient.post('/assessment/plans', {
-        ...wizardData,
+        name: wizardData.name,
+        partner_id: wizardData.partner_id,
+        period_type: wizardData.period_type || 'quarterly',
+        start_date: wizardData.start_date,
+        end_date: wizardData.end_date,
+        indicator_ids: wizardData.indicator_ids,
         status: 'DRAFT',
       })
       message.success('评估计划创建成功')
@@ -407,6 +425,34 @@ const VendorAssessment: React.FC = () => {
     setExecutionPlan(plan)
     setExecutionScores({})
     setExecutionComments({})
+    setExecutionSWSC({ strengths: '', weaknesses: '', suggestions: '' })
+
+    if (plan.status === 'IN_PROGRESS') {
+      Promise.all([
+        apiClient.get(`/assessment/plans/${plan.id}/results`),
+        apiClient.get('/assessment/reports').catch(() => ({ data: [] })),
+      ]).then(([resultsRes, reportsRes]) => {
+        const results = resultsRes.data || []
+        const scoresMap: Record<number, number> = {}
+        const commentsMap: Record<number, string> = {}
+        results.forEach((r: any) => {
+          scoresMap[r.indicator_id] = r.score
+          if (r.comment) commentsMap[r.indicator_id] = r.comment
+        })
+        setExecutionScores(scoresMap)
+        setExecutionComments(commentsMap)
+
+        const existingReport = (reportsRes.data || []).find((r: any) => r.plan_id === plan.id)
+        if (existingReport) {
+          setExecutionSWSC({
+            strengths: existingReport.strengths || '',
+            weaknesses: existingReport.weaknesses || '',
+            suggestions: existingReport.suggestions || '',
+          })
+        }
+      }).catch(() => {})
+    }
+
     setExecutionVisible(true)
   }
 
@@ -424,6 +470,8 @@ const VendorAssessment: React.FC = () => {
           score,
           comment: executionComments[Number(id)] || '',
         })),
+        ...executionSWSC,
+        finalize: true,
       })
       message.success('评估执行提交成功')
       setExecutionVisible(false)
@@ -434,7 +482,49 @@ const VendorAssessment: React.FC = () => {
     }
   }
 
-  const handleAudit = (plan: AssessmentPlan, action: 'APPROVED' | 'REJECTED') => {
+  const handleSaveProgress = async (finalize: boolean) => {
+    if (!executionPlan) return
+    const scoreEntries = Object.entries(executionScores)
+    if (scoreEntries.length === 0) {
+      message.error('请至少填写一个指标评分')
+      return
+    }
+    try {
+      const res = await apiClient.post(`/assessment/plans/${executionPlan.id}/execute`, {
+        scores: scoreEntries.map(([id, score]) => ({
+          indicator_id: Number(id),
+          score,
+          comment: executionComments[Number(id)] || '',
+        })),
+        ...executionSWSC,
+        finalize,
+      })
+      message.success(finalize ? '评估执行提交成功' : '进度已保存')
+      setExecutionVisible(false)
+      fetchPlans()
+      if (finalize) fetchReports()
+    } catch {
+      message.error('保存失败')
+    }
+  }
+
+  const handleAudit = (plan: AssessmentPlan, action: 'APPROVED' | 'REJECTED' | 'SUBMIT') => {
+    if (action === 'SUBMIT') {
+      Modal.confirm({
+        title: '提交审批',
+        content: <p>确认提交计划「{plan.name}」进行审批？</p>,
+        onOk: async () => {
+          try {
+            await apiClient.post(`/assessment/plans/${plan.id}/audit`, { action: 'submit' })
+            message.success('提交审批成功')
+            fetchPlans()
+          } catch {
+            message.error('操作失败')
+          }
+        },
+      })
+      return
+    }
     setSelectedPlan(plan)
     setAuditComment('')
     Modal.confirm({
@@ -455,7 +545,8 @@ const VendorAssessment: React.FC = () => {
       ),
       onOk: async () => {
         try {
-          await apiClient.post(`/assessment/plans/${plan.id}/audit`, { action, comment: auditComment })
+          const backendAction = action === 'APPROVED' ? 'approve' : 'reject'
+          await apiClient.post(`/assessment/plans/${plan.id}/audit`, { action: backendAction, comment: auditComment })
           message.success(action === 'APPROVED' ? '审批通过' : '审批拒绝')
           fetchPlans()
         } catch {
@@ -472,7 +563,8 @@ const VendorAssessment: React.FC = () => {
 
   const handleReportAudit = async (report: AssessmentReport, action: 'APPROVED' | 'REJECTED') => {
     try {
-      await apiClient.post(`/assessment/reports/${report.id}/audit`, { action })
+      const backendAction = action === 'APPROVED' ? 'approve' : 'reject'
+      await apiClient.post(`/assessment/reports/${report.id}/audit`, { action: backendAction })
       message.success(action === 'APPROVED' ? '审核通过' : '审核拒绝')
       fetchReports()
     } catch {
@@ -545,6 +637,7 @@ const VendorAssessment: React.FC = () => {
         </Space>
       ),
       key: ind.id,
+      checkable: !ind.children || ind.children.length === 0,
       children: ind.children ? getTreeData(ind.children) : undefined,
     }))
   }
@@ -553,6 +646,27 @@ const VendorAssessment: React.FC = () => {
     for (const item of items) {
       result.push(item)
       if (item.children) getFlatIndicators(item.children, result)
+    }
+    return result
+  }
+
+  const getLeafIndicators = (items: Indicator[], result: Indicator[] = []): Indicator[] => {
+    for (const item of items) {
+      if (!item.children || item.children.length === 0) {
+        result.push(item)
+      } else {
+        getLeafIndicators(item.children, result)
+      }
+    }
+    return result
+  }
+
+  const getParentIndicators = (items: Indicator[], result: Indicator[] = []): Indicator[] => {
+    for (const item of items) {
+      if (item.children && item.children.length > 0) {
+        result.push(item)
+        getParentIndicators(item.children, result)
+      }
     }
     return result
   }
@@ -617,7 +731,7 @@ const VendorAssessment: React.FC = () => {
           {record.status === 'DRAFT' && (
             <>
               <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setSelectedPlan(record); setWizardStep(2); setWizardData(record); setWizardVisible(true) }} title="编辑" style={{ padding: '2px 6px' }} />
-              <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handleStartExecution(record)} title="开始评估" style={{ padding: '2px 6px' }} />
+              <Button type="link" size="small" icon={<AuditOutlined />} onClick={() => handleAudit(record, 'SUBMIT')} title="提交审批" style={{ padding: '2px 6px', color: colorPalette.warning }} />
             </>
           )}
           {record.status === 'PENDING_AUDIT' && (
@@ -781,12 +895,12 @@ const VendorAssessment: React.FC = () => {
               tabBarStyle={{ marginBottom: 0, borderBottom: 'none' }}
             >
               <TabPane
-                tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><RadarChartOutlined /> 评估指标</span>}
-                key="indicators"
-              />
-              <TabPane
                 tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><AuditOutlined /> 评估计划</span>}
                 key="plans"
+              />
+              <TabPane
+                tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><RadarChartOutlined /> 评估指标</span>}
+                key="indicators"
               />
               <TabPane
                 tab={<span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}><FileTextOutlined /> 评估报告</span>}
@@ -1062,120 +1176,99 @@ const VendorAssessment: React.FC = () => {
           onCancel={() => setWizardVisible(false)}
           footer={
             <Space>
-              {wizardStep > 0 && (
-                <Button onClick={() => setWizardStep(wizardStep - 1)} style={{ borderRadius: 8 }}>上一步</Button>
-              )}
-              {wizardStep < 2 && (
-                <Button type="primary" onClick={handleWizardNext} style={{ borderRadius: 8 }}>下一步</Button>
-              )}
-              {wizardStep === 2 && (
-                <Button type="primary" onClick={handleWizardFinish} style={{ borderRadius: 8 }}>完成</Button>
-              )}
+              <Button onClick={() => setWizardVisible(false)} style={{ borderRadius: 8 }}>取消</Button>
+              <Button type="primary" onClick={handleWizardFinish} style={{ borderRadius: 8 }}>创建</Button>
             </Space>
           }
-          width={700}
+          width={720}
           destroyOnClose
           style={{ top: 100 }}
           styles={{ body: { paddingTop: 20 } }}
         >
-          <Steps current={wizardStep} style={{ marginBottom: 24 }} size="small" />
-          <div style={{ minHeight: 200 }}>
-            {wizardStep === 0 && (
-              <Form layout="vertical">
-                <Form.Item label={<span style={{ fontWeight: 500 }}>合作伙伴</span>} required rules={[{ required: true, message: '请选择合作伙伴' }]}>
-                  <Select
-                    placeholder="请选择合作伙伴"
-                    onChange={v => setWizardData(prev => ({ ...prev, partner_id: v }))}
-                    value={wizardData.partner_id}
-                    showSearch
-                    optionFilterProp="children"
-                    style={{ width: '100%', borderRadius: 8 }}
-                  >
-                    {partners.map(p => (
-                      <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-              </Form>
-            )}
-
-            {wizardStep === 1 && (
-              <Form layout="vertical">
-                <Form.Item label={<span style={{ fontWeight: 500 }}>选择评估指标</span>} required>
-                  <div style={{
-                    background: colorPalette.bg,
-                    borderRadius: 10,
-                    border: `1px solid ${colorPalette.border}`,
-                    padding: 12,
-                    maxHeight: 300,
-                    overflow: 'auto',
-                  }}>
-                    <Tree
-                      checkable
-                      selectable={false}
-                      treeData={getTreeData(indicators)}
-                      checkedKeys={wizardData.indicator_ids || []}
-                      onCheck={(checked) => {
-                        const keys = (checked as number[]).filter(k =>
-                          getFlatIndicators(indicators).some(ind => ind.id === k)
-                        )
-                        setWizardData(prev => ({ ...prev, indicator_ids: keys }))
-                      }}
-                      defaultExpandAll
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ background: colorPalette.primaryLight, borderRadius: 8, padding: '12px 16px', border: `1px solid ${colorPalette.border}` }}>
+              <div style={{ fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 12, fontSize: 14 }}>基本信息</div>
+              <Form layout="vertical" requiredMark="optional">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Form.Item label={<span style={{ fontWeight: 500 }}>计划名称</span>} rules={[{ required: true, message: '请输入计划名称' }]}>
+                    <Input
+                      placeholder="如：2024年Q2季度评估"
+                      value={wizardData.name || ''}
+                      onChange={e => setWizardData(prev => ({ ...prev, name: e.target.value }))}
+                      maxLength={200}
+                      style={{ borderRadius: 8 }}
                     />
-                  </div>
-                </Form.Item>
-                <div style={{ color: colorPalette.textSecondary, fontSize: 13, marginTop: 8 }}>
-                  已选 <strong style={{ color: colorPalette.primary }}>{wizardData.indicator_ids?.length || 0}</strong> 个指标
+                  </Form.Item>
+                  <Form.Item label={<span style={{ fontWeight: 500 }}>合作伙伴</span>} rules={[{ required: true, message: '请选择合作伙伴' }]}>
+                    <Select
+                      placeholder="请选择合作伙伴"
+                      value={wizardData.partner_id}
+                      onChange={v => setWizardData(prev => ({ ...prev, partner_id: v }))}
+                      showSearch
+                      optionFilterProp="children"
+                      style={{ width: '100%', borderRadius: 8 }}
+                    >
+                      {partners.map(p => (
+                        <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  <Form.Item label={<span style={{ fontWeight: 500 }}>评估周期</span>}>
+                    <Select
+                      placeholder="选择评估周期"
+                      value={wizardData.period_type}
+                      onChange={v => setWizardData(prev => ({ ...prev, period_type: v }))}
+                      style={{ width: '100%', borderRadius: 8 }}
+                    >
+                      <Select.Option value="quarterly">季度评估</Select.Option>
+                      <Select.Option value="annual">年度评估</Select.Option>
+                      <Select.Option value="onetime">一次性评估</Select.Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item label={<span style={{ fontWeight: 500 }}>评估时间范围</span>}>
+                    <RangePicker
+                      style={{ width: '100%', borderRadius: 8 }}
+                      onChange={(dates) => {
+                        if (dates && dates[0] && dates[1]) {
+                          const [start, end] = dates
+                          setWizardData(prev => ({
+                            ...prev,
+                            start_date: start!.format('YYYY-MM-DD'),
+                            end_date: end!.format('YYYY-MM-DD'),
+                          }))
+                        }
+                      }}
+                      value={
+                        wizardData.start_date
+                          ? ([dayjs(wizardData.start_date), dayjs(wizardData.end_date)] as [dayjs.Dayjs, dayjs.Dayjs])
+                          : null
+                      }
+                    />
+                  </Form.Item>
                 </div>
               </Form>
-            )}
+            </div>
 
-            {wizardStep === 2 && (
-              <Form layout="vertical">
-                <Form.Item label={<span style={{ fontWeight: 500 }}>计划名称</span>} required rules={[{ required: true, message: '请输入计划名称' }]}>
-                  <Input
-                    placeholder="如：2024年Q2季度评估"
-                    value={wizardData.name || ''}
-                    onChange={e => setWizardData(prev => ({ ...prev, name: e.target.value }))}
-                    maxLength={200}
-                    style={{ borderRadius: 8 }}
-                  />
-                </Form.Item>
-                <Form.Item label={<span style={{ fontWeight: 500 }}>评估周期</span>} required>
-                  <Select
-                    placeholder="选择评估周期"
-                    value={wizardData.period_type}
-                    onChange={v => setWizardData(prev => ({ ...prev, period_type: v }))}
-                    style={{ width: '100%', borderRadius: 8 }}
-                  >
-                    <Select.Option value="quarterly">季度评估</Select.Option>
-                    <Select.Option value="annual">年度评估</Select.Option>
-                    <Select.Option value="onetime">一次性评估</Select.Option>
-                  </Select>
-                </Form.Item>
-                <Form.Item label={<span style={{ fontWeight: 500 }}>评估时间范围</span>} required>
-                  <RangePicker
-                    style={{ width: '100%', borderRadius: 8 }}
-                    onChange={(dates) => {
-                      if (dates && dates[0] && dates[1]) {
-                        const [start, end] = dates
-                        setWizardData(prev => ({
-                          ...prev,
-                          start_date: start!.format('YYYY-MM-DD'),
-                          end_date: end!.format('YYYY-MM-DD'),
-                        }))
-                      }
-                    }}
-                    value={
-                      wizardData.start_date
-                        ? ([dayjs(wizardData.start_date), dayjs(wizardData.end_date)] as [dayjs.Dayjs, dayjs.Dayjs])
-                        : null
-                    }
-                  />
-                </Form.Item>
-              </Form>
-            )}
+            <div style={{ background: colorPalette.bg, borderRadius: 8, padding: '12px 16px', border: `1px solid ${colorPalette.border}` }}>
+              <div style={{ fontWeight: 600, color: colorPalette.textPrimary, marginBottom: 12, fontSize: 14 }}>选择评估指标 <span style={{ color: colorPalette.textMuted, fontWeight: 400, fontSize: 12 }}>（仅可选择叶子指标）</span></div>
+              <div style={{ background: '#fff', borderRadius: 8, border: `1px solid ${colorPalette.border}`, padding: 12, maxHeight: 280, overflow: 'auto' }}>
+                <Tree
+                  checkable
+                  selectable={false}
+                  treeData={getTreeData(indicators)}
+                  checkedKeys={wizardData.indicator_ids || []}
+                  onCheck={(checked) => {
+                    const leafIds = getLeafIndicators(indicators).map(ind => ind.id)
+                    const keys = (checked as number[]).filter(k => leafIds.includes(k))
+                    setWizardData(prev => ({ ...prev, indicator_ids: keys }))
+                  }}
+                  defaultExpandAll
+                />
+              </div>
+              <div style={{ color: colorPalette.textSecondary, fontSize: 13, marginTop: 8, textAlign: 'right' }}>
+                已选 <strong style={{ color: colorPalette.primary }}>{wizardData.indicator_ids?.length || 0}</strong> 个指标
+              </div>
+            </div>
           </div>
         </Modal>
 
@@ -1267,7 +1360,14 @@ const VendorAssessment: React.FC = () => {
           extra={
             <Space>
               <Button onClick={() => setExecutionVisible(false)} style={{ borderRadius: 8 }}>取消</Button>
-              <Button type="primary" onClick={handleExecutionSubmit} style={{ borderRadius: 8 }}>提交评估</Button>
+              {executionPlan?.status === 'IN_PROGRESS' ? (
+                <>
+                  <Button onClick={() => handleSaveProgress(false)} style={{ borderRadius: 8 }}>保存继续</Button>
+                  <Button type="primary" onClick={() => handleSaveProgress(true)} style={{ borderRadius: 8 }}>提交评估</Button>
+                </>
+              ) : (
+                <Button type="primary" onClick={handleExecutionSubmit} style={{ borderRadius: 8 }}>提交评估</Button>
+              )}
             </Space>
           }
         >
@@ -1284,81 +1384,170 @@ const VendorAssessment: React.FC = () => {
               </Descriptions>
 
               <Divider style={{ margin: '16px 0' }}>
+                <span style={{ fontWeight: 600, color: colorPalette.textPrimary, fontSize: 14 }}>综合评价</span>
+              </Divider>
+
+              <div style={{ marginBottom: 16 }}>
+                <Form.Item label="优势亮点" style={{ marginBottom: 8 }}>
+                  <Input.TextArea
+                    rows={2}
+                    placeholder="请描述该合作伙伴的优势和亮点"
+                    value={executionSWSC.strengths}
+                    onChange={e => setExecutionSWSC(prev => ({ ...prev, strengths: e.target.value }))}
+                    style={{ borderRadius: 8 }}
+                  />
+                </Form.Item>
+                <Form.Item label="不足之处" style={{ marginBottom: 8 }}>
+                  <Input.TextArea
+                    rows={2}
+                    placeholder="请描述该合作伙伴存在的不足"
+                    value={executionSWSC.weaknesses}
+                    onChange={e => setExecutionSWSC(prev => ({ ...prev, weaknesses: e.target.value }))}
+                    style={{ borderRadius: 8 }}
+                  />
+                </Form.Item>
+                <Form.Item label="改进建议">
+                  <Input.TextArea
+                    rows={2}
+                    placeholder="请提出具体的改进建议"
+                    value={executionSWSC.suggestions}
+                    onChange={e => setExecutionSWSC(prev => ({ ...prev, suggestions: e.target.value }))}
+                    style={{ borderRadius: 8 }}
+                  />
+                </Form.Item>
+              </div>
+
+              <Divider style={{ margin: '16px 0' }}>
                 <span style={{ fontWeight: 600, color: colorPalette.textPrimary, fontSize: 14 }}>指标评分</span>
               </Divider>
 
-              {indicators.map(ind => (
-                <div key={ind.id} style={{ marginBottom: 24 }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 10,
-                    paddingBottom: 8,
-                    borderBottom: `1px solid ${colorPalette.borderLight}`,
-                  }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: colorPalette.textPrimary }}>{ind.name}</span>
-                    <Tag color="blue" style={{ borderRadius: 4 }}>权重 {ind.weight}%</Tag>
-                  </div>
+              {(() => {
+                const planIndicatorIds = executionPlan?.indicator_ids || []
+                const planIndicatorIdSet = new Set(planIndicatorIds)
 
-                  {ind.children?.map(child => (
-                    <div
-                      key={child.id}
-                      style={{
-                        background: colorPalette.bg,
-                        borderRadius: 10,
-                        border: `1px solid ${colorPalette.border}`,
-                        padding: '12px 16px',
-                        marginBottom: 10,
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontWeight: 500, color: colorPalette.textPrimary }}>{child.name}</span>
-                          <Tag color="purple" style={{ borderRadius: 4 }}>权重 {child.weight}%</Tag>
-                          <Tag color={child.scoring_type === 'quantitative' ? 'green' : 'orange'} style={{ borderRadius: 4 }}>
-                            {child.scoring_type === 'quantitative' ? '量化(0-100)' : '等级'}
-                          </Tag>
+                if (planIndicatorIds.length === 0) {
+                  return <Empty description="该计划未选择指标" style={{ margin: '40px 0' }} />
+                }
+
+                // Build parent->children map for flat indicator lists (from API)
+                const childrenOfParent: Record<number, Indicator[]> = {}
+                const leafIdsInPlan = new Set<number>()
+                indicators.forEach(ind => {
+                  if (ind.parent_id === null && ind.children?.length) {
+                    // Has explicit children array (nested mock data)
+                  } else if (ind.parent_id !== null) {
+                    // Flat structure: track children by parent_id
+                    if (!childrenOfParent[ind.parent_id]) childrenOfParent[ind.parent_id] = []
+                    childrenOfParent[ind.parent_id].push(ind)
+                  }
+                  if (planIndicatorIdSet.has(ind.id)) {
+                    leafIdsInPlan.add(ind.id)
+                  }
+                })
+
+                // Separate parents (have children in plan) from standalone leaves
+                const parentIndicators = indicators.filter(ind => {
+                  const children = ind.children || childrenOfParent[ind.id] || []
+                  return children.length > 0 && children.some(c => planIndicatorIdSet.has(c.id))
+                })
+                const standaloneLeaves = indicators.filter(ind => {
+                  const children = ind.children || childrenOfParent[ind.id] || []
+                  return children.length === 0 && planIndicatorIdSet.has(ind.id)
+                })
+
+                const renderIndicator = (ind: Indicator, isParentSection: boolean) => {
+                  const children = isParentSection
+                    ? (ind.children || childrenOfParent[ind.id] || []).filter((c: Indicator) => planIndicatorIdSet.has(c.id))
+                    : [ind]
+
+                  return (
+                    <div key={ind.id} style={{ marginBottom: 24 }}>
+                      {isParentSection && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          marginBottom: 10,
+                          paddingBottom: 8,
+                          borderBottom: `1px solid ${colorPalette.borderLight}`,
+                        }}>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: colorPalette.textPrimary }}>{ind.name}</span>
+                          <Tag color="blue" style={{ borderRadius: 4 }}>权重 {ind.weight}%</Tag>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 12, color: colorPalette.textSecondary }}>评分：</span>
-                          {child.scoring_type === 'quantitative' ? (
-                            <InputNumber
-                              min={0}
-                              max={100}
-                              value={executionScores[child.id]}
-                              onChange={v => setExecutionScores(prev => ({ ...prev, [child.id]: v ?? 0 }))}
-                              style={{ width: 100, borderRadius: 8 }}
-                              placeholder="0-100"
+                      )}
+
+                      {children.map((child: Indicator) => (
+                        <div
+                          key={child.id}
+                          style={{
+                            background: colorPalette.bg,
+                            borderRadius: 10,
+                            border: `1px solid ${colorPalette.border}`,
+                            padding: '12px 16px',
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {!isParentSection && (
+                                <span style={{ fontSize: 14, fontWeight: 600, color: colorPalette.textPrimary }}>{child.name}</span>
+                              )}
+                              {isParentSection && (
+                                <span style={{ fontWeight: 500, color: colorPalette.textPrimary }}>{child.name}</span>
+                              )}
+                              <Tag color="purple" style={{ borderRadius: 4 }}>权重 {child.weight}%</Tag>
+                              <Tag color={child.scoring_type === 'quantitative' ? 'green' : 'orange'} style={{ borderRadius: 4 }}>
+                                {child.scoring_type === 'quantitative' ? '量化(0-100)' : '等级'}
+                              </Tag>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: colorPalette.textSecondary }}>评分：</span>
+                              {child.scoring_type === 'quantitative' ? (
+                                <InputNumber
+                                  min={0}
+                                  max={100}
+                                  value={executionScores[child.id]}
+                                  onChange={v => setExecutionScores(prev => ({ ...prev, [child.id]: v ?? 0 }))}
+                                  style={{ width: 100, borderRadius: 8 }}
+                                  placeholder="0-100"
+                                />
+                              ) : (
+                                <Select
+                                  placeholder="选择等级"
+                                  value={executionScores[child.id]}
+                                  onChange={v => setExecutionScores(prev => ({ ...prev, [child.id]: v }))}
+                                  style={{ width: 130, borderRadius: 8 }}
+                                >
+                                  <Select.Option value={100}>A (90-100)</Select.Option>
+                                  <Select.Option value={80}>B (70-89)</Select.Option>
+                                  <Select.Option value={60}>C (60-69)</Select.Option>
+                                  <Select.Option value={40}>D (0-59)</Select.Option>
+                                </Select>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 8 }}>
+                            <Input.TextArea
+                              placeholder="评分说明（可选）"
+                              rows={1}
+                              value={executionComments[child.id] || ''}
+                              onChange={e => setExecutionComments(prev => ({ ...prev, [child.id]: e.target.value }))}
+                              style={{ borderRadius: 8, fontSize: 13 }}
                             />
-                          ) : (
-                            <Select
-                              placeholder="选择等级"
-                              value={executionScores[child.id]}
-                              onChange={v => setExecutionScores(prev => ({ ...prev, [child.id]: v }))}
-                              style={{ width: 130, borderRadius: 8 }}
-                            >
-                              <Select.Option value={100}>A (90-100)</Select.Option>
-                              <Select.Option value={80}>B (70-89)</Select.Option>
-                              <Select.Option value={60}>C (60-69)</Select.Option>
-                              <Select.Option value={40}>D (0-59)</Select.Option>
-                            </Select>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ marginTop: 8 }}>
-                        <Input.TextArea
-                          placeholder="评分说明（可选）"
-                          rows={1}
-                          value={executionComments[child.id] || ''}
-                          onChange={e => setExecutionComments(prev => ({ ...prev, [child.id]: e.target.value }))}
-                          style={{ borderRadius: 8, fontSize: 13 }}
-                        />
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ))}
+                  )
+                }
+
+                return (
+                  <>
+                    {parentIndicators.map(ind => renderIndicator(ind, true))}
+                    {standaloneLeaves.map(ind => renderIndicator(ind, false))}
+                  </>
+                )
+              })()}
             </>
           )}
         </Drawer>

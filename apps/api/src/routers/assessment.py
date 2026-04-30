@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
 from pydantic import BaseModel
+from prisma.enums import AssessmentMethod
+import json
+from datetime import datetime
 from ..database import db
 
 router = APIRouter(prefix="/assessment", tags=["厂商评估"])
@@ -13,11 +16,29 @@ class IndicatorBase(BaseModel):
 
 class IndicatorCreate(IndicatorBase):
     parent_id: Optional[int] = None
+    scoring_type: str = "quantitative"
+    description: Optional[str] = None
 
 
 class IndicatorUpdate(BaseModel):
     name: Optional[str] = None
     weight: Optional[float] = None
+    scoring_type: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ScoreSubmit(BaseModel):
+    indicator_id: int
+    score: float
+    comment: Optional[str] = ""
+
+
+class PlanExecuteSubmit(BaseModel):
+    scores: List[ScoreSubmit]
+    strengths: Optional[str] = None
+    weaknesses: Optional[str] = None
+    suggestions: Optional[str] = None
+    finalize: bool = True
 
 
 class PlanCreate(BaseModel):
@@ -69,7 +90,11 @@ async def list_indicators(parent_id: Optional[int] = None):
 
 @router.post("/indicators", response_model=IndicatorResponse, status_code=201)
 async def create_indicator(indicator: IndicatorCreate):
-    created = await db.assessmentindicator.create(data=indicator.model_dump())
+    data = indicator.model_dump()
+    data["scoringType"] = data.pop("scoring_type")
+    if "parent_id" in data:
+        data["parentId"] = data.pop("parent_id")
+    created = await db.assessmentindicator.create(data=data)
     return _indicator_to_response(created)
 
 
@@ -77,16 +102,25 @@ async def create_indicator(indicator: IndicatorCreate):
 async def import_indicators(indicators: List[IndicatorCreate]):
     created = []
     for ind in indicators:
-        indicator = await db.assessmentindicator.create(data=ind.model_dump())
+        data = ind.model_dump()
+        data["scoringType"] = data.pop("scoring_type")
+        if "parent_id" in data:
+            data["parentId"] = data.pop("parent_id")
+        indicator = await db.assessmentindicator.create(data=data)
         created.append(_indicator_to_response(indicator))
     return {"created": len(created), "indicators": created}
 
 
 @router.put("/indicators/{indicator_id}", response_model=IndicatorResponse)
 async def update_indicator(indicator_id: int, update: IndicatorUpdate):
+    data = update.model_dump(exclude_unset=True)
+    if "scoring_type" in data:
+        data["scoringType"] = data.pop("scoring_type")
+    if "parent_id" in data:
+        data["parentId"] = data.pop("parent_id")
     updated = await db.assessmentindicator.update(
         where={"id": indicator_id},
-        data=update.model_dump(exclude_unset=True)
+        data=data
     )
     return _indicator_to_response(updated)
 
@@ -113,6 +147,7 @@ class PlanResponse(BaseModel):
 
 
 def _plan_to_response(plan) -> dict:
+    import json
     partner_name = None
     if hasattr(plan, 'partner') and plan.partner:
         partner_name = plan.partner.name
@@ -120,9 +155,18 @@ def _plan_to_response(plan) -> dict:
     indicator_ids = []
     if hasattr(plan, 'indicator_ids') and plan.indicator_ids:
         try:
-            indicator_ids = plan.indicator_ids if isinstance(plan.indicator_ids, list) else []
+            if isinstance(plan.indicator_ids, list):
+                indicator_ids = plan.indicator_ids
+            else:
+                indicator_ids = json.loads(plan.indicator_ids)
         except:
             indicator_ids = []
+
+    def fmt_date(dt):
+        if not dt:
+            return None
+        iso = dt.isoformat()
+        return iso.split('T')[0] if 'T' in iso else iso
 
     return {
         'id': plan.id,
@@ -130,8 +174,8 @@ def _plan_to_response(plan) -> dict:
         'partner_id': plan.partnerId,
         'partner_name': partner_name,
         'period_type': getattr(plan, 'periodType', 'quarterly'),
-        'start_date': plan.startDate.isoformat() if hasattr(plan, 'startDate') and plan.startDate else None,
-        'end_date': plan.endDate.isoformat() if hasattr(plan, 'endDate') and plan.endDate else None,
+        'start_date': fmt_date(getattr(plan, 'startDate', None)),
+        'end_date': fmt_date(getattr(plan, 'endDate', None)),
         'status': plan.status,
         'total_score': float(plan.totalScore) if hasattr(plan, 'totalScore') and plan.totalScore else None,
         'indicator_ids': indicator_ids,
@@ -149,14 +193,25 @@ async def list_plans(partner_id: Optional[int] = None):
 
 @router.post("/plans", response_model=PlanResponse, status_code=201)
 async def create_plan(plan: PlanCreate):
+    def parse_dt(s):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d")
+        except:
+            return None
+
+    if not plan.partner_id:
+        raise HTTPException(status_code=400, detail="partner_id is required")
+
     data = {
         "name": plan.name,
-        "partnerId": plan.partner_id,
-        "periodType": plan.period_type,
-        "startDate": plan.start_date,
-        "endDate": plan.end_date,
-        "indicatorIds": plan.indicator_ids,
+        "periodType": plan.period_type or "quarterly",
+        "startDate": parse_dt(plan.start_date),
+        "endDate": parse_dt(plan.end_date),
+        "indicatorIds": json.dumps(plan.indicator_ids) if plan.indicator_ids else "[]",
         "evaluatorId": 1,
+        "partner": {"connect": {"id": plan.partner_id}},
     }
     created = await db.assessmentplan.create(data=data)
     return _plan_to_response(created)
@@ -203,12 +258,24 @@ def _report_to_response(report) -> dict:
         partner_name = report.partner.name
 
     scores = []
+    strengths = None
+    weaknesses = None
+    suggestions = None
     if hasattr(report, 'content') and report.content:
         try:
             if isinstance(report.content, dict):
                 scores = report.content.get('scores', [])
+                strengths = report.content.get('strengths', '')
+                weaknesses = report.content.get('weaknesses', '')
+                suggestions = report.content.get('suggestions', '')
         except:
             pass
+
+    def fmt_date(dt):
+        if not dt:
+            return None
+        iso = dt.isoformat()
+        return iso.split('T')[0] if 'T' in iso else iso
 
     return {
         'id': report.id,
@@ -218,11 +285,11 @@ def _report_to_response(report) -> dict:
         'total_score': float(report.totalScore) if hasattr(report, 'totalScore') and report.totalScore else 0,
         'level': getattr(report, 'level', 'B'),
         'status': getattr(report, 'status', 'DRAFT'),
-        'created_at': report.createdAt.isoformat() if hasattr(report, 'createdAt') and report.createdAt else None,
+        'created_at': fmt_date(getattr(report, 'createdAt', None)),
         'scores': scores,
-        'strengths': None,
-        'weaknesses': None,
-        'suggestions': None,
+        'strengths': strengths or None,
+        'weaknesses': weaknesses or None,
+        'suggestions': suggestions or None,
     }
 
 
@@ -256,7 +323,7 @@ async def get_report(report_id: int):
 
 @router.post("/plans/{plan_id}/audit")
 async def audit_plan(plan_id: int, action: str):
-    status_map = {"approve": "APPROVED", "reject": "PENDING_AUDIT"}
+    status_map = {"approve": "APPROVED", "reject": "PENDING_AUDIT", "submit": "PENDING_AUDIT"}
     if action not in status_map:
         raise HTTPException(status_code=400, detail="无效操作")
     updated = await db.assessmentplan.update(
@@ -267,16 +334,86 @@ async def audit_plan(plan_id: int, action: str):
 
 
 @router.post("/plans/{plan_id}/execute")
-async def execute_plan(plan_id: int):
+async def execute_plan(plan_id: int, submit: PlanExecuteSubmit):
     plan = await db.assessmentplan.find_unique(where={"id": plan_id})
     if not plan:
         raise HTTPException(status_code=404, detail="评估计划不存在")
 
+    if plan.status not in ["APPROVED", "IN_PROGRESS"]:
+        raise HTTPException(status_code=400, detail="计划状态不允许执行评分")
+
+    is_first_execution = plan.status == "APPROVED"
+
+    total_score = 0.0
+    created_results = []
+
+    for item in submit.scores:
+        indicator = await db.assessmentindicator.find_unique(where={"id": item.indicator_id})
+        if not indicator:
+            continue
+
+        weighted_score = float(item.score) * (float(indicator.weight) / 100.0)
+        total_score += weighted_score
+
+        result_data = {
+            "planId": plan_id,
+            "indicatorId": item.indicator_id,
+            "partnerId": plan.partnerId,
+            "score": item.score,
+            "assessorId": plan.evaluatorId,
+            "method": AssessmentMethod.MANUAL,
+            "comment": item.comment,
+        }
+
+        if is_first_execution:
+            result = await db.assessmentresult.create(data=result_data)
+        else:
+            existing = await db.assessmentresult.find_first(
+                where={"planId": plan_id, "indicatorId": item.indicator_id}
+            )
+            if existing:
+                result = await db.assessmentresult.update(
+                    where={"id": existing.id},
+                    data=result_data
+                )
+            else:
+                result = await db.assessmentresult.create(data=result_data)
+        created_results.append(result)
+
+    total_score = round(total_score, 2)
+
+    report_data = {
+        "planId": plan_id,
+        "partnerId": plan.partnerId,
+        "totalScore": total_score,
+        "content": {"scores": [{"indicator_id": r.indicator_id, "score": float(r.score), "comment": getattr(r, 'comment', '')} for r in created_results], "strengths": submit.strengths or "", "weaknesses": submit.weaknesses or "", "suggestions": submit.suggestions or ""},
+        "status": "PENDING_AUDIT",
+    }
+
+    if is_first_execution:
+        await db.assessmentreport.create(data=report_data)
+    else:
+        existing_report = await db.assessmentreport.find_first(where={"planId": plan_id})
+        if existing_report:
+            await db.assessmentreport.update(
+                where={"id": existing_report.id},
+                data=report_data
+            )
+        else:
+            await db.assessmentreport.create(data=report_data)
+
+    new_status = "COMPLETED" if submit.finalize else ("IN_PROGRESS" if plan.status == "APPROVED" else "IN_PROGRESS")
     await db.assessmentplan.update(
         where={"id": plan_id},
-        data={"status": "IN_PROGRESS"}
+        data={"status": new_status}
     )
-    return {"message": "评估开始执行", "plan_id": plan_id}
+
+    return {
+        "message": "评估执行完成" if submit.finalize else "评分已保存，继续评估",
+        "plan_id": plan_id,
+        "total_score": total_score,
+        "status": new_status,
+    }
 
 
 @router.get("/partners/{partner_id}/history")
@@ -304,13 +441,23 @@ async def audit_report(report_id: int, action: str):
 @router.get("/plans/{plan_id}/results")
 async def get_plan_results(plan_id: int):
     results = await db.assessmentresult.find_many(
-        where={"plan_id": plan_id}
+        where={"planId": plan_id}
     )
+    if not results:
+        return []
+
+    # Batch-fetch all indicators to avoid N queries
+    indicator_ids = list(set(r.indicator_id for r in results))
+    indicators = await db.assessmentindicator.find_many(
+        where={"id": {"in": indicator_ids}}
+    )
+    indicator_map = {ind.id: ind for ind in indicators}
+
     return [
         {
             'indicator_id': r.indicator_id,
-            'indicator_name': '指标',
-            'weight': 0,
+            'indicator_name': indicator_map[r.indicator_id].name if r.indicator_id in indicator_map else '未知指标',
+            'weight': float(indicator_map[r.indicator_id].weight) if r.indicator_id in indicator_map else 0,
             'score': float(r.score) if hasattr(r, 'score') and r.score else 0,
             'comment': getattr(r, 'comment', None),
         }

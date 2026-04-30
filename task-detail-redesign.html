@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务详情页设计</title>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+            integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+            crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+            integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+            crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+            integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+            crossorigin="anonymous"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --color-primary: #1677ff;
+            --color-success: #52c41a;
+            --color-danger: #ff4d4f;
+            --color-warning: #faad14;
+            --color-bg-layout: #f5f5f5;
+            --color-bg-card: #ffffff;
+            --color-text-primary: #262626;
+            --color-text-secondary: #595959;
+            --color-text-tertiary: #8c8c8c;
+            --color-border: #d9d9d9;
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--color-bg-layout);
+            color: var(--color-text-primary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .drawer-shell {
+            width: 820px;
+            height: 100vh;
+            background: var(--color-bg-layout);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ─── Header ─── */
+        .drawer-header {
+            background: #fff;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .drawer-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .drawer-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .status-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-tag.draft { background: #e6f4ff; color: #1677ff; }
+        .status-tag.assigned { background: #f6ffed; color: #52c41a; }
+        .status-tag.in_progress { background: #fff7e6; color: #fa8c16; }
+        .status-tag.completed { background: #d9f7be; color: #389e0d; }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* ─── Tabs Nav ─── */
+        .tab-nav {
+            background: #fff;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            padding: 12px 16px;
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            border: none;
+            background: none;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover { color: var(--color-primary); }
+
+        .tab-btn.active {
+            color: var(--color-primary);
+            border-bottom-color: var(--color-primary);
+            font-weight: 500;
+        }
+
+        .tab-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 9px;
+            background: var(--color-primary);
+            color: #fff;
+            font-size: 11px;
+        }
+
+        /* ─── Content Area ─── */
+        .drawer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+        }
+
+        /* ─── Base Info Section ─── */
+        .section-card {
+            background: var(--color-bg-card);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+
+        .info-row {
+            display: contents;
+        }
+
+        .info-cell {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .info-cell:nth-child(odd) {
+            background: #fafafa;
+            min-width: 120px;
+            max-width: 160px;
+            flex-shrink: 0;
+        }
+
+        .info-cell:nth-child(even) {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .info-label {
+            font-size: 13px;
+            color: var(--color-text-tertiary);
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .info-value {
+            font-size: 14px;
+            color: var(--color-text-primary);
+            word-break: break-word;
+            text-wrap: pretty;
+            max-width: 100%;
+            line-height: 1.5;
+        }
+
+        .info-value.full-width {
+            grid-column: 1 / -1;
+            background: #fff !important;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* Task name special styling */
+        .task-name-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        /* Tags in cells */
+        .cell-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .dev-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #e6f4ff;
+            color: #1677ff;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+        }
+
+        .role-chip {
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+            background: #f5f5f5;
+            padding: 0 4px;
+            border-radius: 3px;
+        }
+
+        /* Progress bar */
+        .progress-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-track {
+            flex: 1;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--color-primary);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .progress-pct {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--color-primary);
+            min-width: 38px;
+            text-align: right;
+        }
+
+        /* Warning icon */
+        .overdue-icon {
+            color: var(--color-danger);
+            margin-left: 4px;
+        }
+
+        /* ─── Steps Bar ─── */
+        .steps-bar {
+            padding: 16px 20px;
+            border-top: 1px solid #f0f0f0;
+            background: #fafafa;
+        }
+
+        .steps-inner {
+            display: flex;
+            align-items: center;
+        }
+
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            position: relative;
+        }
+
+        .step-circle {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #d9d9d9;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 1;
+        }
+
+        .step-circle.done { background: var(--color-success); }
+        .step-circle.active { background: var(--color-primary); }
+        .step-circle.error { background: var(--color-danger); }
+
+        .step-label {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            text-align: center;
+        }
+
+        .step-label.active { color: var(--color-primary); font-weight: 500; }
+        .step-label.done { color: var(--color-success); }
+
+        .step-desc {
+            font-size: 11px;
+            color: var(--color-text-tertiary);
+        }
+
+        .step-line {
+            position: absolute;
+            top: 14px;
+            left: calc(50% + 14px);
+            right: calc(-50% + 14px);
+            height: 2px;
+            background: #d9d9d9;
+        }
+
+        .step-line.done { background: var(--color-success); }
+
+        /* ─── Section Header ─── */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ─── Assignment Section ─── */
+        .assign-list {
+            padding: 0;
+        }
+
+        .assign-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f5f5f5;
+            gap: 12px;
+        }
+
+        .assign-item:last-child { border-bottom: none; }
+
+        .assign-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .assign-info { flex: 1; min-width: 0; }
+
+        .assign-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--color-text-primary);
+            word-break: break-word;
+        }
+
+        .assign-meta {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-top: 2px;
+        }
+
+        .assign-status {
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .assign-status.accepted { background: #f6ffed; color: #52c41a; }
+        .assign-status.pending { background: #fffbe6; color: #faad14; }
+        .assign-status.rejected { background: #fff2f0; color: #ff4d4f; }
+
+        .assign-action { flex-shrink: 0; }
+
+        /* ─── Progress Timeline ─── */
+        .timeline-wrap {
+            padding: 16px 20px;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-left: 28px;
+            padding-bottom: 24px;
+        }
+
+        .timeline-item:last-child { padding-bottom: 0; }
+
+        .timeline-dot {
+            position: absolute;
+            left: 0;
+            top: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--color-primary);
+        }
+
+        .timeline-dot.green { background: var(--color-success); }
+        .timeline-dot.orange { background: var(--color-warning); }
+
+        .timeline-line {
+            position: absolute;
+            left: 4px;
+            top: 18px;
+            bottom: 0;
+            width: 2px;
+            background: #e8e8e8;
+        }
+
+        .timeline-item:last-child .timeline-line { display: none; }
+
+        .timeline-content {
+            background: #fafafa;
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+        }
+
+        .timeline-progress-pct {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--color-primary);
+            margin-bottom: 4px;
+        }
+
+        .timeline-progress-pct.green { color: var(--color-success); }
+
+        .timeline-desc {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            word-break: break-word;
+            text-wrap: pretty;
+        }
+
+        .timeline-meta {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-top: 4px;
+        }
+
+        /* ─── Deliverable List ─── */
+        .deliverable-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f5f5f5;
+            gap: 12px;
+        }
+
+        .deliverable-item:last-child { border-bottom: none; }
+
+        .deliverable-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+            background: #e6f4ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-primary);
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .deliverable-info { flex: 1; min-width: 0; }
+
+        .deliverable-name {
+            font-size: 14px;
+            color: var(--color-text-primary);
+            word-break: break-word;
+            text-wrap: pretty;
+        }
+
+        .deliverable-meta {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-top: 2px;
+        }
+
+        /* ─── Delay Cards ─── */
+        .delay-card {
+            background: #fff;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .delay-card.pending { border-color: #ffd591; background: #fffbe6; }
+        .delay-card.approved { border-color: #b7eb8f; background: #f6ffed; }
+        .delay-card.rejected { border-color: #ffccc7; background: #fff2f0; }
+
+        .delay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .delay-reason {
+            font-size: 14px;
+            color: var(--color-text-primary);
+            word-break: break-word;
+            text-wrap: pretty;
+            flex: 1;
+        }
+
+        .delay-meta {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-top: 4px;
+        }
+
+        .delay-status {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .delay-status.pending { background: #faad14; color: #fff; }
+        .delay-status.approved { background: #52c41a; color: #fff; }
+        .delay-status.rejected { background: #ff4d4f; color: #fff; }
+
+        /* ─── Archive ─── */
+        .archive-empty {
+            text-align: center;
+            padding: 48px 0;
+            color: var(--color-text-tertiary);
+        }
+
+        .archive-empty-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 24px;
+            color: #d9d9d9;
+        }
+
+        /* ─── Empty State ─── */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--color-text-tertiary);
+        }
+
+        .empty-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-size: 20px;
+            color: #bfbfbf;
+        }
+
+        /* ─── Utility Buttons ─── */
+        .btn {
+            padding: 5px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid var(--color-border);
+            background: #fff;
+            color: var(--color-text-secondary);
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+        .btn-primary {
+            background: var(--color-primary);
+            border-color: var(--color-primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: #4096ff; border-color: #4096ff; }
+
+        .btn-danger {
+            background: #fff;
+            border-color: var(--color-danger);
+            color: var(--color-danger);
+        }
+
+        .btn-danger:hover { background: #ff4d4f; border-color: #ff4d4f; color: #fff; }
+
+        .btn-sm { padding: 3px 10px; font-size: 12px; }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* ─── Tweaks Panel ─── */
+        .tw-pannel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 999;
+        }
+
+        .tw-toggle {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-md);
+        }
+
+        .tw-panel-inner {
+            position: absolute;
+            bottom: 56px;
+            right: 0;
+            width: 240px;
+            background: #fff;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            padding: 16px;
+            display: none;
+        }
+
+        .tw-panel-inner.open { display: block; }
+
+        .tw-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .tw-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .tw-label {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+
+        .tw-select {
+            padding: 3px 8px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            background: #fff;
+        }
+
+        /* ─── Color swatch helper ─── */
+        .priority-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .priority-high { background: #ff4d4f; }
+        .priority-medium { background: #faad14; }
+        .priority-low { background: #52c41a; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d9d9d9; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #bfbfbf; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        /* ──────────────────── DATA ──────────────────── */
+        const MOCK_TASK = {
+            id: 1,
+            name: '合作伙伴CRM系统升级改造项目 — 第三阶段数据库迁移与接口重构',
+            partner_name: '华技术有限公司',
+            developer_id: 101,
+            developer_name: '李明',
+            type: 'technical',
+            priority: 'high',
+            status: 'IN_PROGRESS',
+            start_date: '2026-04-01',
+            end_date: '2026-04-28',
+            budget: 280000,
+            progress: 65,
+            description: '本阶段需完成原有CRM系统的数据库从SQL Server向PostgreSQL迁移，同时对现有业务接口进行全面的重构和性能优化。项目涉及数据迁移脚本编写、历史数据清洗、新旧系统并行运行验证等多个关键环节，需要在保证业务连续性的前提下完成平稳过渡。',
+            delivery_standard: '1. 数据库迁移完成率100%，数据丢失率<0.01%\n2. 所有业务接口响应时间<200ms\n3. 新旧系统并行运行7天无异常\n4. 完整的技术文档和操作手册',
+            requirementDoc: '/uploads/2026/04/crm升级需求文档_v3.2_final.pdf',
+            created_at: '2026-04-01 09:30:00',
+        };
+
+        const MOCK_ASSIGNMENTS = [
+            { id: 1, developer_name: '李明', role: '主开发', assigned_at: '2026-04-05', status: 'ACCEPTED' },
+            { id: 2, developer_name: '王芳', role: '辅助开发', assigned_at: '2026-04-05', status: 'ACCEPTED' },
+            { id: 3, developer_name: '张伟', role: '测试', assigned_at: '2026-04-06', status: 'PENDING' },
+        ];
+
+        const MOCK_PROGRESS = [
+            { id: 1, progress: 20, content: '完成数据库设计文档评审，确认迁移方案和回滚策略。同步完成了历史数据的初步清洗规则制定。', created_at: '2026-04-08', creator_name: '李明' },
+            { id: 2, progress: 45, content: '完成80%的数据迁移脚本开发，包括用户表、订单表、库存表的映射和转换逻辑。', created_at: '2026-04-14', creator_name: '李明' },
+            { id: 3, progress: 65, content: '已完成数据迁移和接口重构，目前在进行新旧系统并行验证，发现并修复了3个兼容性问题。', created_at: '2026-04-22', creator_name: '王芳' },
+        ];
+
+        const MOCK_DELIVERABLES = [
+            { id: 1, name: '数据库迁移脚本_v1.2.zip', file_size: 2458624, uploaded_by: '李明', uploaded_at: '2026-04-15 14:30:00' },
+            { id: 2, name: '接口重构方案文档.pdf', file_size: 1048576, uploaded_by: '王芳', uploaded_at: '2026-04-18 10:15:00' },
+            { id: 3, name: '并行验证报告_0419.docx', file_size: 524288, uploaded_by: '李明', uploaded_at: '2026-04-20 16:45:00' },
+        ];
+
+        const MOCK_DELAYS = [
+            { id: 1, reason: '历史数据中存在大量非标准格式数据，清洗工作量远超预期，需要额外一周时间进行全面校验。', new_end_date: '2026-05-05', created_at: '2026-04-20', status: 'PENDING', approved_at: null },
+        ];
+
+        const STATUS_MAP = {
+            DRAFT: { text: '草稿', cls: 'draft' },
+            ASSIGNED: { text: '已分配', cls: 'assigned' },
+            IN_PROGRESS: { text: '进行中', cls: 'in_progress' },
+            COMPLETED: { text: '已完成', cls: 'completed' },
+        };
+
+        const PRIORITY_MAP = { high: '高', medium: '中', low: '低' };
+        const TYPE_MAP = { technical: '技术开发', business: '业务支持', urgent: '紧急任务' };
+
+        /* ──────────────────── STEPS ──────────────────── */
+        const STEPS = ['创建', '审批', '分配', '执行', '完成'];
+        const STATUS_STEP_MAP = { DRAFT: 0, PENDING_AUDIT: 1, ASSIGNED: 2, IN_PROGRESS: 3, DELIVERED: 4, COMPLETED: 4, ARCHIVED: 4 };
+
+        /* ──────────────────── HELPERS ──────────────────── */
+        function formatBytes(bytes) {
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        function getInitials(name) {
+            return name ? name.slice(0, 1).toUpperCase() : '?';
+        }
+
+        /* ──────────────────── SECTION: BASE INFO ──────────────────── */
+        function BaseInfoSection({ task }) {
+            const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.DRAFT;
+            const isOverdue = new Date(task.end_date) < new Date() && task.status !== 'COMPLETED' && task.status !== 'ARCHIVED';
+
+            return (
+                <div className="section-card">
+                    {/* Full-width task name row */}
+                    <div className="info-cell full-width" style={{ background: '#fff' }}>
+                        <span className="info-label" style={{ minWidth: 120, maxWidth: 160 }}>任务名称</span>
+                        <span className="info-value task-name-value">{task.name}</span>
+                    </div>
+
+                    {/* 2-column grid */}
+                    <div className="info-grid">
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">合作伙伴</span></div>
+                            <div className="info-cell"><span className="info-value">{task.partner_name}</span></div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">开发者</span></div>
+                            <div className="info-cell">
+                                <div className="cell-tags">
+                                    {MOCK_ASSIGNMENTS.map(a => (
+                                        <span key={a.id} className="dev-tag">
+                                            {a.developer_name}
+                                            <span className="role-chip">{a.role}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">任务类型</span></div>
+                            <div className="info-cell"><span className="info-value">{TYPE_MAP[task.type] || task.type}</span></div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">优先级</span></div>
+                            <div className="info-cell">
+                                <span className="info-value">
+                                    <span className={`priority-dot priority-${task.priority}`}></span>
+                                    {PRIORITY_MAP[task.priority] || task.priority}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">开始日期</span></div>
+                            <div className="info-cell"><span className="info-value">{task.start_date}</span></div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">结束日期</span></div>
+                            <div className="info-cell">
+                                <span className="info-value">
+                                    {task.end_date}
+                                    {isOverdue && <span className="overdue-icon" title="已超时">⚠</span>}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">预算</span></div>
+                            <div className="info-cell"><span className="info-value">{task.budget?.toLocaleString()} 元</span></div>
+                        </div>
+
+                        <div className="info-row">
+                            <div className="info-cell"><span className="info-label">当前进度</span></div>
+                            <div className="info-cell">
+                                <div className="progress-wrap">
+                                    <div className="progress-track">
+                                        <div className="progress-fill" style={{ width: `${task.progress}%` }}></div>
+                                    </div>
+                                    <span className="progress-pct">{task.progress}%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Description - full width */}
+                        <div className="info-cell full-width" style={{ background: '#fafafa' }}>
+                            <span className="info-label">任务描述</span>
+                            <span className="info-value">{task.description}</span>
+                        </div>
+
+                        {/* Delivery standard - full width */}
+                        <div className="info-cell full-width" style={{ background: '#fff' }}>
+                            <span className="info-label">交付标准</span>
+                            <span className="info-value" style={{ whiteSpace: 'pre-line' }}>{task.delivery_standard}</span>
+                        </div>
+
+                        {/* Requirement doc - full width */}
+                        <div className="info-cell full-width" style={{ background: '#fafafa' }}>
+                            <span className="info-label">需求文档</span>
+                            <div className="info-value" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span>{task.requirementDoc.split('/').pop()}</span>
+                                <button className="btn btn-sm">↓ 下载</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Steps bar */}
+                    <div className="steps-bar">
+                        <div className="steps-inner">
+                            {STEPS.map((label, i) => {
+                                const stepIdx = STATUS_STEP_MAP[task.status] ?? 0;
+                                const isDone = i < stepIdx;
+                                const isActive = i === stepIdx;
+                                const isError = task.status === 'REJECTED' && i === 1;
+                                return (
+                                    <div key={i} className="step-item">
+                                        {i > 0 && <div className={`step-line ${isDone ? 'done' : ''}`}></div>}
+                                        <div className={`step-circle ${isDone ? 'done' : isError ? 'error' : isActive ? 'active' : ''}`}>
+                                            {isDone ? '✓' : i + 1}
+                                        </div>
+                                        <div className={`step-label ${isDone ? 'done' : isActive ? 'active' : ''}`}>{label}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ──────────────────── SECTION: ASSIGNMENTS ──────────────────── */
+        function AssignmentsSection({ assignments }) {
+            return (
+                <div className="section-card">
+                    <div className="section-header">
+                        <span className="section-title">👥 任务分配</span>
+                        <button className="btn btn-sm btn-primary">+ 分配开发者</button>
+                    </div>
+                    {assignments.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">👥</div>
+                            <div>暂无分配记录</div>
+                        </div>
+                    ) : (
+                        <div className="assign-list">
+                            {assignments.map(a => (
+                                <div key={a.id} className="assign-item">
+                                    <div className="assign-avatar">{getInitials(a.developer_name)}</div>
+                                    <div className="assign-info">
+                                        <div className="assign-name">{a.developer_name}</div>
+                                        <div className="assign-meta">{a.role} · 分配于 {a.assigned_at}</div>
+                                    </div>
+                                    <span className={`assign-status ${a.status.toLowerCase()}`}>
+                                        {{ ACCEPTED: '已接受', PENDING: '待确认', REJECTED: '已拒绝' }[a.status]}
+                                    </span>
+                                    <div className="assign-action">
+                                        <button className="btn btn-sm btn-danger">删除</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ──────────────────── SECTION: PROGRESS ──────────────────── */
+        function ProgressSection({ progressList }) {
+            return (
+                <div className="section-card">
+                    <div className="section-header">
+                        <span className="section-title">📊 进度跟踪</span>
+                        <button className="btn btn-sm btn-primary">+ 更新进度</button>
+                    </div>
+                    {progressList.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">📊</div>
+                            <div>暂无进度记录</div>
+                        </div>
+                    ) : (
+                        <div className="timeline-wrap">
+                            {[...progressList].reverse().map((r, i) => {
+                                const isLast = i === 0;
+                                const dotColor = r.progress === 100 ? 'green' : r.progress >= 50 ? 'orange' : '';
+                                return (
+                                    <div key={r.id} className="timeline-item">
+                                        <div className={`timeline-dot ${dotColor}`}></div>
+                                        <div className="timeline-line"></div>
+                                        <div className="timeline-content">
+                                            <div className={`timeline-progress-pct ${dotColor}`}>{r.progress}%</div>
+                                            <div className="timeline-desc">{r.content}</div>
+                                            <div className="timeline-meta">{r.created_at} · {r.creator_name}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ──────────────────── SECTION: DELIVERABLES ──────────────────── */
+        function DeliverablesSection({ deliverables }) {
+            return (
+                <div className="section-card">
+                    <div className="section-header">
+                        <span className="section-title">📎 交付物</span>
+                        <button className="btn btn-sm btn-primary">+ 上传交付物</button>
+                    </div>
+                    {deliverables.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">📎</div>
+                            <div>暂无交付物</div>
+                        </div>
+                    ) : (
+                        <div>
+                            {deliverables.map(d => (
+                                <div key={d.id} className="deliverable-item">
+                                    <div className="deliverable-icon">📄</div>
+                                    <div className="deliverable-info">
+                                        <div className="deliverable-name">{d.name}</div>
+                                        <div className="deliverable-meta">{formatBytes(d.file_size)} · {d.uploaded_by} · {d.uploaded_at}</div>
+                                    </div>
+                                    <div className="assign-action" style={{ display: 'flex', gap: 4 }}>
+                                        <button className="btn btn-sm">↓ 下载</button>
+                                        <button className="btn btn-sm btn-danger">删除</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ──────────────────── SECTION: DELAYS ──────────────────── */
+        function DelaysSection({ delays }) {
+            return (
+                <div className="section-card">
+                    <div className="section-header">
+                        <span className="section-title">⏰ 延期申请</span>
+                        <button className="btn btn-sm btn-primary">+ 申请延期</button>
+                    </div>
+                    {delays.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">⏰</div>
+                            <div>暂无延期申请</div>
+                        </div>
+                    ) : (
+                        <div style={{ padding: '12px 16px' }}>
+                            {delays.map(d => (
+                                <div key={d.id} className={`delay-card ${d.status.toLowerCase()}`}>
+                                    <div className="delay-header">
+                                        <div>
+                                            <div className="delay-reason">{d.reason}</div>
+                                            <div className="delay-meta">申请延期至: {d.new_end_date} · 申请时间: {d.created_at}</div>
+                                        </div>
+                                        <span className={`delay-status ${d.status.toLowerCase()}`}>
+                                            {{ PENDING: '待审批', APPROVED: '已通过', REJECTED: '已拒绝' }[d.status]}
+                                        </span>
+                                    </div>
+                                    {d.status === 'PENDING' && (
+                                        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                            <button className="btn btn-sm btn-primary" style={{ background: '#52c41a', borderColor: '#52c41a' }}>通过</button>
+                                            <button className="btn btn-sm btn-danger">拒绝</button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ──────────────────── SECTION: ARCHIVES ──────────────────── */
+        function ArchivesSection() {
+            return (
+                <div className="section-card">
+                    <div className="section-header">
+                        <span className="section-title">📁 归档记录</span>
+                    </div>
+                    <div className="archive-empty">
+                        <div className="archive-empty-icon">📁</div>
+                        <div>归档记录将在任务归档后显示</div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ──────────────────── MAIN DRAWER ──────────────────── */
+        function TaskDetailDrawer({ task, activeTab, onTabChange }) {
+            const [currentTab, setCurrentTab] = useState(activeTab || 'info');
+            const [variant, setVariant] = useState('clean');
+
+            const tabs = [
+                { key: 'info', label: '基本信息' },
+                { key: 'assignments', label: '任务分配', badge: MOCK_ASSIGNMENTS.length },
+                { key: 'progress', label: '进度跟踪', badge: MOCK_PROGRESS.length },
+                { key: 'deliverables', label: '交付物', badge: MOCK_DELIVERABLES.length },
+                { key: 'delays', label: '延期申请', badge: MOCK_DELAYS.length },
+                { key: 'archives', label: '归档记录' },
+            ];
+
+            const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.DRAFT;
+
+            return (
+                <div className="drawer-shell">
+                    {/* Header */}
+                    <div className="drawer-header">
+                        <div className="drawer-header-left">
+                            <span className="drawer-title">{task.name.length > 20 ? task.name.slice(0, 20) + '…' : task.name}</span>
+                            <span className={`status-tag ${statusInfo.cls}`}>{statusInfo.text}</span>
+                        </div>
+                        <div className="header-actions">
+                            <button className="btn btn-sm">编辑</button>
+                            <button className="btn btn-sm btn-primary">提交审批</button>
+                        </div>
+                    </div>
+
+                    {/* Tab Nav */}
+                    <div className="tab-nav">
+                        {tabs.map(t => (
+                            <button
+                                key={t.key}
+                                className={`tab-btn ${currentTab === t.key ? 'active' : ''}`}
+                                onClick={() => setCurrentTab(t.key)}
+                            >
+                                {t.label}
+                                {t.badge > 0 && <span className="tab-badge">{t.badge}</span>}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Body */}
+                    <div className="drawer-body">
+                        {currentTab === 'info' && <BaseInfoSection task={task} />}
+                        {currentTab === 'assignments' && <AssignmentsSection assignments={MOCK_ASSIGNMENTS} />}
+                        {currentTab === 'progress' && <ProgressSection progressList={MOCK_PROGRESS} />}
+                        {currentTab === 'deliverables' && <DeliverablesSection deliverables={MOCK_DELIVERABLES} />}
+                        {currentTab === 'delays' && <DelaysSection delays={MOCK_DELAYS} />}
+                        {currentTab === 'archives' && <ArchivesSection />}
+                    </div>
+
+                    {/* Tweaks Panel */}
+                    <div className="tw-pannel">
+                        <div className="tw-panel-inner">
+                            <div className="tw-title">Tweaks</div>
+                            <div className="tw-row">
+                                <span className="tw-label">布局变体</span>
+                                <select className="tw-select" value={variant} onChange={e => setVariant(e.target.value)}>
+                                    <option value="clean">简洁卡片</option>
+                                    <option value="dense">紧凑密度</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button className="tw-toggle" onClick={e => {
+                            const panel = e.target.nextSibling;
+                            panel.classList.toggle('open');
+                        }}>⚙</button>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ──────────────────── APP ──────────────────── */
+        function App() {
+            return (
+                <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
+                    <div style={{ marginBottom: 16, fontSize: 13, color: '#8c8c8c' }}>
+                        预览：任务详情页重新设计 — 抽屉宽度 820px
+                    </div>
+                    <TaskDetailDrawer task={MOCK_TASK} activeTab="info" />
+                </div>
+            );
+        }
+
+        Object.assign(window, { TaskDetailDrawer, App });
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

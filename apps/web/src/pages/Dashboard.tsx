@@ -19,10 +19,11 @@ import apiClient from '@/api/axios'
 Chart.register(...registerables)
 
 interface DashboardStats {
-  developers: { total: number; trend: number; trendDirection: 'up' | 'down' }
-  tasks: { inProgress: number; delayed: number; trend: number }
-  assessments: { completed: number; trendDirection: 'up' | 'down' }
-  risks: { total: number; critical: number }
+  developers: { total: number; pending: number; approved: number }
+  tasks: { total: number; inProgress: number; completed: number; delayed: number }
+  assessments: { total: number; published: number }
+  risks: { total: number; critical: number; high: number; medium: number; low: number }
+  partners: { total: number; active: number }
 }
 
 interface TaskTrendData {
@@ -44,7 +45,7 @@ interface RecentTask {
   deadline?: string
 }
 
-interface Partner {
+interface PartnerScore {
   id: number
   name: string
   type: string
@@ -52,21 +53,15 @@ interface Partner {
   status: 'online' | 'offline' | 'busy'
 }
 
-interface RiskOverview {
-  critical: number
-  high: number
-  medium: number
-  low: number
-}
-
 interface SkillDistribution {
   name: string
   percentage: number
+  category?: string
   color: string
 }
 
 interface Activity {
-  id: number
+  id: string
   user: string
   action: string
   target: string
@@ -74,21 +69,24 @@ interface Activity {
   type: 'success' | 'info' | 'warning' | 'error'
 }
 
+const SKILL_COLORS = ['#1890ff', '#22c55e', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#64748b']
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats>({
-    developers: { total: 0, trend: 0, trendDirection: 'up' },
-    tasks: { inProgress: 0, delayed: 0, trend: 0 },
-    assessments: { completed: 0, trendDirection: 'up' },
-    risks: { total: 0, critical: 0 },
+    developers: { total: 0, pending: 0, approved: 0 },
+    tasks: { total: 0, inProgress: 0, completed: 0, delayed: 0 },
+    assessments: { total: 0, published: 0 },
+    risks: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
+    partners: { total: 0, active: 0 },
   })
   const [taskTrendData, setTaskTrendData] = useState<TaskTrendData>({ labels: [], completed: [], delayed: [] })
   const [assessmentData, setAssessmentData] = useState<AssessmentDistribution>({ labels: [], data: [] })
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([])
-  const [partners, setPartners] = useState<Partner[]>([])
-  const [riskOverview, setRiskOverview] = useState<RiskOverview>({ critical: 0, high: 0, medium: 0, low: 0 })
+  const [partners, setPartners] = useState<PartnerScore[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  const [skillDistributions, setSkillDistributions] = useState<SkillDistribution[]>([])
 
   const taskTrendRef = useRef<HTMLCanvasElement>(null)
   const assessmentRef = useRef<HTMLCanvasElement>(null)
@@ -112,7 +110,7 @@ const Dashboard: React.FC = () => {
             labels: taskTrendData.labels,
             datasets: [
               {
-                label: '完成任务',
+                label: '完成',
                 data: taskTrendData.completed,
                 borderColor: '#1890ff',
                 backgroundColor: 'rgba(24, 144, 255, 0.1)',
@@ -122,7 +120,7 @@ const Dashboard: React.FC = () => {
                 pointBackgroundColor: '#1890ff',
               },
               {
-                label: '延期任务',
+                label: '延期',
                 data: taskTrendData.delayed,
                 borderColor: '#f59e0b',
                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -184,85 +182,114 @@ const Dashboard: React.FC = () => {
   const fetchDashboardData = async () => {
     setLoading(true)
     try {
-      const [statsRes, tasksRes, partnersRes, assessmentsRes] = await Promise.allSettled([
+      const [statsRes, tasksRes, partnersRes, assessmentsRes, taskTrendRes, skillsRes, activitiesRes, partnerScoresRes] = await Promise.allSettled([
         apiClient.get('/dashboard/stats'),
         apiClient.get('/tasks?page=1&page_size=10'),
         apiClient.get('/partners?page=1&page_size=10'),
         apiClient.get('/assessment/reports?page=1&page_size=100'),
+        apiClient.get('/dashboard/task-trend'),
+        apiClient.get('/dashboard/skill-distribution'),
+        apiClient.get('/dashboard/activities'),
+        apiClient.get('/dashboard/partner-scores'),
       ])
 
-      const stats = statsRes.status === 'fulfilled' ? (statsRes as any).value.data : null
-      const tasksData = tasksRes.status === 'fulfilled' ? (tasksRes as any).value.data : []
-      const partnersData = partnersRes.status === 'fulfilled' ? (partnersRes as any).value.data : []
-      const assessments = assessmentsRes.status === 'fulfilled' ? (assessmentsRes as any).value.data : []
+      const stats = statsRes.status === 'fulfilled' ? statsRes.value.data : null
+      const tasksData = tasksRes.status === 'fulfilled' ? tasksRes.value.data : []
+      const partnersData = partnersRes.status === 'fulfilled' ? partnersRes.value.data : []
+      const assessments = assessmentsRes.status === 'fulfilled' ? assessmentsRes.value.data : []
+      const taskTrend = taskTrendRes.status === 'fulfilled' ? taskTrendRes.value.data : null
+      const skills = skillsRes.status === 'fulfilled' ? skillsRes.value.data : []
+      const acts = activitiesRes.status === 'fulfilled' ? activitiesRes.value.data : []
+      const partnerScores = partnerScoresRes.status === 'fulfilled' ? partnerScoresRes.value.data : []
 
       if (stats) {
         setStats({
           developers: {
             total: stats.developers?.total || 0,
-            trend: 0,
-            trendDirection: 'up'
+            pending: stats.developers?.pending || 0,
+            approved: stats.developers?.approved || 0,
           },
           tasks: {
+            total: stats.tasks?.total || 0,
             inProgress: stats.tasks?.inProgress || 0,
+            completed: stats.tasks?.completed || 0,
             delayed: stats.tasks?.delayed || 0,
-            trend: 0
           },
           assessments: {
-            completed: stats.assessments?.published || 0,
-            trendDirection: 'up'
+            total: stats.assessments?.total || 0,
+            published: stats.assessments?.published || 0,
           },
           risks: {
             total: stats.risks?.total || 0,
-            critical: stats.risks?.critical || 0
+            critical: stats.risks?.critical || 0,
+            high: stats.risks?.high || 0,
+            medium: stats.risks?.medium || 0,
+            low: stats.risks?.low || 0,
+          },
+          partners: {
+            total: stats.partners?.total || 0,
+            active: stats.partners?.active || 0,
           },
         })
       }
 
-      setTaskTrendData({
-        labels: ['1日', '5日', '10日', '15日', '20日', '25日', '30日'],
-        completed: [12, 19, 15, 22, 18, 25, 28],
-        delayed: [2, 3, 1, 4, 3, 2, 5],
-      })
+      if (taskTrend) {
+        setTaskTrendData({
+          labels: taskTrend.labels || [],
+          completed: taskTrend.completed || [],
+          delayed: taskTrend.delayed || [],
+        })
+      } else {
+        setTaskTrendData({ labels: [], completed: [], delayed: [] })
+      }
 
-      const excellentCount = assessments.filter((a: any) => a.total_score >= 90).length
-      const goodCount = assessments.filter((a: any) => a.total_score >= 75 && a.total_score < 90).length
-      const qualifiedCount = assessments.filter((a: any) => a.total_score >= 60 && a.total_score < 75).length
-      const needsWorkCount = assessments.filter((a: any) => a.total_score < 60).length
+      const excellentCount = assessments.filter((a: any) => Number(a.total_score) >= 90).length
+      const goodCount = assessments.filter((a: any) => Number(a.total_score) >= 75 && Number(a.total_score) < 90).length
+      const qualifiedCount = assessments.filter((a: any) => Number(a.total_score) >= 60 && Number(a.total_score) < 75).length
+      const needsWorkCount = assessments.filter((a: any) => Number(a.total_score) < 60).length
+      const totalCount = excellentCount + goodCount + qualifiedCount + needsWorkCount
 
       setAssessmentData({
         labels: ['优秀', '良好', '合格', '待改进'],
-        data: [excellentCount, goodCount, qualifiedCount, needsWorkCount],
+        data: totalCount > 0 ? [excellentCount, goodCount, qualifiedCount, needsWorkCount] : [],
       })
 
-      const recentTasks: RecentTask[] = (tasksData as any[]).slice(0, 5).map((t: any) => ({
+      const recentTasksList: RecentTask[] = (tasksData as any[]).slice(0, 5).map((t: any) => ({
         id: t.id,
         title: t.name,
         assignee: t.developer_name || '未分配',
         status: (t.status === 'COMPLETED' ? 'completed' : t.status === 'IN_PROGRESS' ? 'in_progress' : t.status === 'REJECTED' ? 'delayed' : 'pending') as RecentTask['status'],
         deadline: t.end_date || undefined,
       }))
-      setRecentTasks(recentTasks.length > 0 ? recentTasks : [])
+      setRecentTasks(recentTasksList)
 
-      const partnerList: Partner[] = (partnersData as any[]).slice(0, 5).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        type: p.description || '合作伙伴',
-        score: 85,
-        status: 'online' as const,
-      }))
-      setPartners(partnerList.length > 0 ? partnerList : [])
+      if (partnerScores && partnerScores.length > 0) {
+        setPartners(partnerScores.slice(0, 5))
+      } else {
+        const fallbackPartners: PartnerScore[] = (partnersData as any[]).slice(0, 5).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          type: p.description || '合作伙伴',
+          score: 0,
+          status: 'offline' as const,
+        }))
+        setPartners(fallbackPartners)
+      }
 
-      setRiskOverview({
-        critical: stats?.risks?.critical || 0,
-        high: stats?.risks?.high || 0,
-        medium: stats?.risks?.medium || 0,
-        low: stats?.risks?.low || 0,
-      })
+      if (skills && skills.length > 0) {
+        setSkillDistributions(skills.map((s: any, i: number) => ({
+          name: s.name,
+          percentage: s.percentage || 0,
+          category: s.category,
+          color: SKILL_COLORS[i % SKILL_COLORS.length],
+        })))
+      }
 
-      setActivities([
-        { id: 1, user: '系统', action: '数据已更新', target: '仪表盘统计', time: '刚刚', type: 'success' },
-      ])
+      if (acts && acts.length > 0) {
+        setActivities(acts)
+      } else {
+        setActivities([{ id: 'empty', user: '系统', action: '暂无最新活动', target: '', time: '—', type: 'info' }])
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
     } finally {
@@ -300,12 +327,9 @@ const Dashboard: React.FC = () => {
     return classes[type] || '#1890ff'
   }
 
-  const skills: SkillDistribution[] = [
-    { name: '前端开发 (React/Vue)', percentage: 85, color: '#1890ff' },
-    { name: '后端开发 (Java/Node)', percentage: 72, color: '#22c55e' },
-    { name: '数据库管理', percentage: 65, color: '#8b5cf6' },
-    { name: 'DevOps / 云计算', percentage: 48, color: '#f59e0b' },
-  ]
+  const developerTrend = stats.developers.total > 0
+    ? Math.round((stats.developers.approved / stats.developers.total) * 100)
+    : 0
 
   if (loading) {
     return (
@@ -337,7 +361,7 @@ const Dashboard: React.FC = () => {
             <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1, marginBottom: 6 }}>{stats.developers.total}</div>
             <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>开发人员总数</div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-              <ArrowUpOutlined /> +{stats.developers.trend}% 本月
+              <ArrowUpOutlined /> {developerTrend}% 已认证
             </span>
           </Card>
         </Col>
@@ -368,10 +392,10 @@ const Dashboard: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 10, background: 'rgba(139,92,246,0.1)', marginBottom: 16 }}>
               <AuditOutlined style={{ fontSize: 22, color: '#8b5cf6' }} />
             </div>
-            <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1, marginBottom: 6 }}>{stats.assessments.completed}</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1, marginBottom: 6 }}>{stats.assessments.published}</div>
             <div style={{ fontSize: 13, color: '#64748b', marginBottom: 14 }}>已完成评估</div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-              <ArrowUpOutlined /> 本季度
+              <ArrowUpOutlined /> 共{stats.assessments.total}次
             </span>
           </Card>
         </Col>
@@ -388,7 +412,7 @@ const Dashboard: React.FC = () => {
             <div style={{ fontSize: 32, fontWeight: 700, color: 'white', lineHeight: 1, marginBottom: 6 }}>{stats.risks.total}</div>
             <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 14 }}>风险项总数</div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              <ArrowUpOutlined /> {stats.risks.critical} 严重
+              <ArrowUpOutlined /> {stats.risks.high}高 / {stats.risks.critical}严重
             </span>
           </Card>
         </Col>
@@ -400,7 +424,7 @@ const Dashboard: React.FC = () => {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>任务完成趋势</div>
-                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>近30天任务完成情况</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>近7日任务完成情况</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
@@ -412,7 +436,9 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
             <div style={{ padding: 24, height: 240 }}>
-              <canvas ref={taskTrendRef} />
+              {taskTrendData.labels.length > 0 ? <canvas ref={taskTrendRef} /> : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: 14 }}>暂无任务趋势数据</div>
+              )}
             </div>
           </Card>
         </Col>
@@ -421,10 +447,12 @@ const Dashboard: React.FC = () => {
           <Card bordered={false} style={{ borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 0 } }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9' }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>评估等级分布</div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>本季度评估结果</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>全部评估报告</div>
             </div>
             <div style={{ padding: 24, height: 200 }}>
-              <canvas ref={assessmentRef} />
+              {assessmentData.data.length > 0 ? <canvas ref={assessmentRef} /> : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: 14 }}>暂无评估数据</div>
+              )}
             </div>
           </Card>
         </Col>
@@ -438,28 +466,28 @@ const Dashboard: React.FC = () => {
         <Row gutter={16}>
           <Col xs={12} sm={6}>
             <div style={{ padding: 20, borderRadius: 10, textAlign: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>{riskOverview.critical}</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>{stats.risks.critical}</div>
               <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>严重风险</div>
               <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 500, background: '#ef4444', color: 'white' }}>需立即处理</span>
             </div>
           </Col>
           <Col xs={12} sm={6}>
             <div style={{ padding: 20, borderRadius: 10, textAlign: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>{riskOverview.high}</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>{stats.risks.high}</div>
               <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>高风险</div>
               <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 500, background: '#ef4444', color: 'white' }}>优先处理</span>
             </div>
           </Col>
           <Col xs={12} sm={6}>
             <div style={{ padding: 20, borderRadius: 10, textAlign: 'center', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>{riskOverview.medium}</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>{stats.risks.medium}</div>
               <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>中风险</div>
               <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 500, background: '#f59e0b', color: 'white' }}>持续关注</span>
             </div>
           </Col>
           <Col xs={12} sm={6}>
             <div style={{ padding: 20, borderRadius: 10, textAlign: 'center', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
-              <div style={{ fontSize: 32, fontWeight: 700, color: '#22c55e', marginBottom: 6 }}>{riskOverview.low}</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#22c55e', marginBottom: 6 }}>{stats.risks.low}</div>
               <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>低风险</div>
               <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 500, background: '#22c55e', color: 'white' }}>正常监控</span>
             </div>
@@ -475,8 +503,8 @@ const Dashboard: React.FC = () => {
         <Row gutter={32}>
           <Col xs={24} lg={12}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {skills.map((skill, index) => (
-                <div key={index}>
+              {skillDistributions.length > 0 ? skillDistributions.map((skill) => (
+                <div key={skill.name}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>{skill.name}</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>{skill.percentage}%</span>
@@ -485,7 +513,9 @@ const Dashboard: React.FC = () => {
                     <div style={{ height: '100%', width: `${skill.percentage}%`, background: skill.color, borderRadius: 4, transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 14, padding: '20px 0' }}>暂无技能数据</div>
+              )}
             </div>
           </Col>
           <Col xs={24} lg={12}>
@@ -528,7 +558,7 @@ const Dashboard: React.FC = () => {
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>{partner.type}</div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                    <span style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{partner.score}</span>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: partner.score >= 75 ? '#22c55e' : partner.score >= 60 ? '#f59e0b' : '#ef4444' }}>{partner.score > 0 ? partner.score : '—'}</span>
                     <span style={{ fontSize: 11, color: '#94a3b8' }}>评估得分</span>
                   </div>
                 </div>

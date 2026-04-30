@@ -504,6 +504,38 @@ const TaskRegistration: React.FC = () => {
     { title: '操作', key: 'action', width: 320, render: (_, record) => renderActionButtons(record) },
   ]
 
+  const infoTabStyle = {
+    wrapper: { padding: 0 } as React.CSSProperties,
+    row: {
+      display: 'grid',
+      gridTemplateColumns: '120px 1fr 120px 1fr',
+      borderBottom: '1px solid #f0f0f0',
+    } as React.CSSProperties,
+    fullRow: {
+      display: 'grid',
+      gridTemplateColumns: '120px 1fr',
+      borderBottom: '1px solid #f0f0f0',
+    } as React.CSSProperties,
+    labelCol: {
+      padding: '12px 16px',
+      background: '#fafafa',
+      fontSize: 13,
+      color: '#8c8c8c',
+      fontWeight: 500,
+      display: 'flex',
+      alignItems: 'flex-start',
+    } as React.CSSProperties,
+    valueCol: {
+      padding: '12px 16px',
+      fontSize: 14,
+      color: '#262626',
+      wordBreak: 'break-word',
+      textWrap: 'pretty',
+      display: 'flex',
+      alignItems: 'center',
+    } as React.CSSProperties,
+  }
+
   return (
     <ConfigProvider locale={zhCN}>
       <div style={{ padding: '0 24px' }}>
@@ -741,18 +773,19 @@ const TaskRegistration: React.FC = () => {
               tabBarStyle={{ padding: '0 24px', margin: 0, borderBottom: '1px solid #f0f0f0', background: '#fff' }}
             >
               <TabPane tab="基本信息" key="info">
-                <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>任务名称</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', textWrap: 'pretty', display: 'flex', alignItems: 'flex-start', gridColumn: 'span 3' }}>
+                <div style={infoTabStyle.wrapper}>
+                  <div style={infoTabStyle.fullRow}>
+                    <div style={infoTabStyle.labelCol}>任务名称</div>
+                    <div style={{ ...infoTabStyle.valueCol, alignItems: 'flex-start', paddingTop: 10 }}>
                       <strong style={{ fontSize: 15 }}>{selectedTask.name}</strong>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>合作伙伴</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', display: 'flex', alignItems: 'center' }}>{selectedTask.partner_name}</div>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>开发者</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', display: 'flex', alignItems: 'center' }}>
+
+                  <div style={infoTabStyle.row}>
+                    <div style={infoTabStyle.labelCol}>合作伙伴</div>
+                    <div style={infoTabStyle.valueCol}>{selectedTask.partner_name}</div>
+                    <div style={infoTabStyle.labelCol}>开发者</div>
+                    <div style={{ ...infoTabStyle.valueCol, alignItems: 'center' }}>
                       <Space wrap size={[4, 4]}>
                         {assignments.length > 0
                           ? assignments.map(a => (
@@ -765,23 +798,25 @@ const TaskRegistration: React.FC = () => {
                       </Space>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>任务类型</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', display: 'flex', alignItems: 'center' }}>
+
+                  <div style={infoTabStyle.row}>
+                    <div style={infoTabStyle.labelCol}>任务类型</div>
+                    <div style={infoTabStyle.valueCol}>
                       {taskTypes.find(t => t.value === selectedTask.type)?.label}
                     </div>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>优先级</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', display: 'flex', alignItems: 'center' }}>
+                    <div style={infoTabStyle.labelCol}>优先级</div>
+                    <div style={infoTabStyle.valueCol}>
                       <Tag color={PRIORITY_MAP[selectedTask.priority]?.color} style={{ borderRadius: 10 }}>
                         {PRIORITY_MAP[selectedTask.priority]?.text}
                       </Tag>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>开始日期</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', display: 'flex', alignItems: 'center' }}>{selectedTask.start_date}</div>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>结束日期</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', display: 'flex', alignItems: 'center' }}>
+
+                  <div style={infoTabStyle.row}>
+                    <div style={infoTabStyle.labelCol}>开始日期</div>
+                    <div style={infoTabStyle.valueCol}>{selectedTask.start_date}</div>
+                    <div style={infoTabStyle.labelCol}>结束日期</div>
+                    <div style={infoTabStyle.valueCol}>
                       <Space>
                         {selectedTask.end_date}
                         {dayjs(selectedTask.end_date).isBefore(dayjs()) &&
@@ -793,49 +828,65 @@ const TaskRegistration: React.FC = () => {
                       </Space>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>预算</div>
-                    <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', display: 'flex', alignItems: 'center' }}>{selectedTask.budget?.toLocaleString()} 元</div>
-                    <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>当前进度</div>
-                    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center' }}>
+
+                  <div style={infoTabStyle.row}>
+                    <div style={infoTabStyle.labelCol}>预算</div>
+                    <div style={infoTabStyle.valueCol}>{selectedTask.budget?.toLocaleString()} 元</div>
+                    <div style={infoTabStyle.labelCol}>当前进度</div>
+                    <div style={{ ...infoTabStyle.valueCol, alignItems: 'center' }}>
                       <div style={{ flex: 1, maxWidth: 200, height: 8, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
                         <div style={{ width: `${selectedTask.progress}%`, height: '100%', background: '#1677ff', borderRadius: 4, transition: 'width 0.3s' }} />
                       </div>
                       <span style={{ fontWeight: 600, color: '#1677ff', minWidth: 38, textAlign: 'right' }}>{selectedTask.progress}%</span>
                     </div>
                   </div>
+
                   {selectedTask.description && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                      <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>任务描述</div>
-                      <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', textWrap: 'pretty', display: 'flex', alignItems: 'flex-start', gridColumn: 'span 1' }}>
+                    <div style={infoTabStyle.fullRow}>
+                      <div style={infoTabStyle.labelCol}>任务描述</div>
+                      <div style={{ ...infoTabStyle.valueCol, alignItems: 'flex-start', paddingTop: 10 }}>
                         {selectedTask.description}
                       </div>
                     </div>
                   )}
+
                   {selectedTask.delivery_standard && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                      <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>交付标准</div>
-                      <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', wordBreak: 'break-word', textWrap: 'pretty', whiteSpace: 'pre-line', display: 'flex', alignItems: 'flex-start', gridColumn: 'span 1' }}>
+                    <div style={infoTabStyle.fullRow}>
+                      <div style={infoTabStyle.labelCol}>交付标准</div>
+                      <div style={{ ...infoTabStyle.valueCol, alignItems: 'flex-start', paddingTop: 10 }}>
                         {selectedTask.delivery_standard}
                       </div>
                     </div>
                   )}
+
                   {selectedTask.requirementDoc && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', borderBottom: '1px solid #f0f0f0' }}>
-                      <div style={{ padding: '12px 16px', background: '#fafafa', fontSize: 13, color: '#8c8c8c', fontWeight: 500, display: 'flex', alignItems: 'flex-start' }}>需求文档</div>
-                      <div style={{ padding: '12px 16px', fontSize: 14, color: '#262626', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={infoTabStyle.fullRow}>
+                      <div style={infoTabStyle.labelCol}>需求文档</div>
+                      <div style={{ ...infoTabStyle.valueCol, alignItems: 'center' }}>
                         <span style={{ wordBreak: 'break-all' }}>{selectedTask.requirementDoc.split('/').pop()}</span>
-                        <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => window.open(selectedTask.requirementDoc, '_blank')}>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => window.open(selectedTask.requirementDoc, '_blank')}
+                        >
                           下载
                         </Button>
                       </div>
                     </div>
                   )}
-                  <div style={{ padding: '16px 20px', borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
+
+                  <div style={{ padding: '16px', borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
                     <Steps
                       current={getStepIndex(selectedTask.status)}
                       size="small"
-                      status={selectedTask.status === 'REJECTED' ? 'error' : selectedTask.status === 'COMPLETED' ? 'finish' : 'process'}
+                      status={
+                        selectedTask.status === 'REJECTED'
+                          ? 'error'
+                          : selectedTask.status === 'COMPLETED'
+                          ? 'finish'
+                          : 'process'
+                      }
                       items={[
                         { title: '创建', description: '草稿' },
                         { title: '审批', description: '待审核' },

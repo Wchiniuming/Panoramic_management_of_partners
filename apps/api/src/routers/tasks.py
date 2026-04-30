@@ -24,6 +24,7 @@ class TaskCreate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     delivery_standard: Optional[str] = None
+    requirement_doc: Optional[str] = None
 
 
 class TaskUpdate(BaseModel):
@@ -35,6 +36,7 @@ class TaskUpdate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     delivery_standard: Optional[str] = None
+    requirement_doc: Optional[str] = None
     status: Optional[str] = None
 
 
@@ -53,8 +55,10 @@ class TaskResponse(BaseModel):
     progress: int = 0
     created_at: Optional[str] = None
     delivery_standard: Optional[str] = None
+    requirement_doc: Optional[str] = None
     developer_id: Optional[int] = None
     developer_name: Optional[str] = None
+    developer_count: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -72,7 +76,7 @@ async def _task_to_response(task) -> dict:
     # Get latest assignment with developer
     latest_assignment = await db.taskassignment.find_first(
         where={"taskId": task.id},
-        order=[{"assignedAt": "desc"}],
+        order=[{"assignedAt": "asc"}],
         include={"developer": True}
     )
     developer_id = None
@@ -80,6 +84,8 @@ async def _task_to_response(task) -> dict:
     if latest_assignment and latest_assignment.developer:
         developer_id = latest_assignment.developerId
         developer_name = latest_assignment.developer.name
+
+    assignment_count = await db.taskassignment.count(where={"taskId": task.id})
 
     # Get partner name
     partner_name = None
@@ -101,8 +107,10 @@ async def _task_to_response(task) -> dict:
         'progress': progress,
         'created_at': task.createdAt.isoformat() if hasattr(task, 'createdAt') and task.createdAt else None,
         'delivery_standard': getattr(task, 'deliveryStandard', None),
+        'requirement_doc': getattr(task, 'requirementDoc', None),
         'developer_id': developer_id,
         'developer_name': developer_name,
+        'developer_count': assignment_count,
     }
 
 
@@ -176,6 +184,7 @@ async def create_task(task: TaskCreate):
         "priority": task.priority or "MEDIUM",
         "budget": task.budget,
         "deliveryStandard": task.delivery_standard,
+        "requirementDoc": task.requirement_doc,
         "status": "DRAFT"
     }
     if task.start_date:
@@ -197,14 +206,18 @@ async def get_task(task_id: int):
 @router.put("/{task_id}", response_model=TaskResponse)
 async def update_task(task_id: int, update: TaskUpdate):
     data = update.model_dump(exclude_unset=True)
-    field_map = {
-        "start_date": "startDate",
-        "end_date": "endDate",
-        "delivery_standard": "deliveryStandard",
-    }
-    for sn, cn in field_map.items():
-        if sn in data:
-            data[cn] = data.pop(sn)
+    if "start_date" in data and data["start_date"]:
+        data["startDate"] = datetime.fromisoformat(data.pop("start_date"))
+    elif "start_date" in data:
+        data["startDate"] = None
+    if "end_date" in data and data["end_date"]:
+        data["endDate"] = datetime.fromisoformat(data.pop("end_date"))
+    elif "end_date" in data:
+        data["endDate"] = None
+    if "delivery_standard" in data:
+        data["deliveryStandard"] = data.pop("delivery_standard")
+    if "requirement_doc" in data:
+        data["requirementDoc"] = data.pop("requirement_doc")
     updated = await db.task.update(
         where={"id": task_id},
         data=data
@@ -229,6 +242,27 @@ class AssignmentResponse(BaseModel):
     role: str
     assigned_at: Optional[str] = None
     status: str = "ACCEPTED"
+
+
+class AssignmentDelete(BaseModel):
+    id: int
+    task_id: int
+    deleted: bool = True
+
+
+class DelayResponse(BaseModel):
+    id: int
+    task_id: int
+    reason: str
+    new_end_date: Optional[str] = None
+    status: str
+    approver_id: Optional[int] = None
+    approved_at: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class DelayAction(BaseModel):
+    action: str
 
 
 class DeveloperAssignBody(BaseModel):
@@ -277,6 +311,21 @@ async def assign_developer(task_id: int, body: DeveloperAssignBody):
     }
 
 
+@router.delete("/{task_id}/assignments/{assignment_id}", response_model=AssignmentDelete)
+async def delete_task_assignment(task_id: int, assignment_id: int):
+    assignment = await db.taskassignment.find_unique(where={"id": assignment_id})
+    if not assignment:
+        raise HTTPException(status_code=404, detail="分配记录不存在")
+    if assignment.taskId != task_id:
+        raise HTTPException(status_code=400, detail="分配记录不属于该任务")
+    await db.taskassignment.delete(where={"id": assignment_id})
+    return {
+        "id": assignment_id,
+        "task_id": task_id,
+        "deleted": True,
+    }
+
+
 class ProgressUpdate(BaseModel):
     progress: int
     status: Optional[str] = None
@@ -320,6 +369,73 @@ async def apply_delay(task_id: int, reason: str, new_end_date: str):
         'reason': delay.reason,
         'new_end_date': delay.newEndDate.isoformat() if hasattr(delay, 'newEndDate') and delay.newEndDate else None,
         'status': delay.status,
+    }
+
+
+@router.get("/{task_id}/delays", response_model=List[DelayResponse])
+async def get_task_delays(task_id: int):
+    delays = await db.taskdelay.find_many(
+        where={"taskId": task_id},
+        order=[{"createdAt": "desc"}]
+    )
+    return [
+        {
+            "id": d.id,
+            "task_id": d.taskId,
+            "reason": d.reason,
+            "new_end_date": d.newEndDate.isoformat() if d.newEndDate else None,
+            "status": d.status.value if hasattr(d.status, 'value') else str(d.status),
+            "approver_id": d.approverId,
+            "approved_at": d.approvedAt.isoformat() if d.approvedAt else None,
+            "created_at": d.createdAt.isoformat() if d.createdAt else None,
+        }
+        for d in delays
+    ]
+
+
+@router.put("/{task_id}/delays/{delay_id}", response_model=DelayResponse)
+async def update_delay(task_id: int, delay_id: int, body: DelayAction):
+    delay = await db.taskdelay.find_unique(where={"id": delay_id})
+    if not delay:
+        raise HTTPException(status_code=404, detail="延期申请不存在")
+    if delay.taskId != task_id:
+        raise HTTPException(status_code=400, detail="延期申请不属于该任务")
+
+    task = await db.task.find_unique(where={"id": task_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    action = body.action.upper()
+    if action not in ["APPROVED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="无效的操作")
+
+    if action == "APPROVED":
+        await db.task.update(
+            where={"id": task_id},
+            data={"endDate": delay.newEndDate}
+        )
+        updated = await db.taskdelay.update(
+            where={"id": delay_id},
+            data={
+                "status": "APPROVED",
+                "approvedAt": datetime.now()
+            }
+        )
+    else:
+        updated = await db.taskdelay.update(
+            where={"id": delay_id},
+            data={"status": "REJECTED"}
+        )
+
+    return {
+        "id": updated.id,
+        "task_id": updated.taskId,
+        "reason": updated.reason,
+        "new_end_date": updated.newEndDate.isoformat() if updated.newEndDate else None,
+        "status": updated.status.value if hasattr(updated.status, 'value') else str(updated.status),
+        "approver_id": updated.approverId,
+        "approved_at": updated.approvedAt.isoformat() if updated.approvedAt else None,
+        "created_at": updated.createdAt.isoformat() if updated.createdAt else None,
     }
 
 
